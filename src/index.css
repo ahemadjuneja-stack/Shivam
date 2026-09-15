@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-gold: #F59E0B;
+  --color-brand-gold-light: #FDE68A;
+  --color-brand-navy-dark: #070D19;
+  --color-brand-navy-card: #0E172A;
+  --color-brand-navy-border: #1E293B;
+  --color-brand-imitation: #F59E0B;
+  --color-brand-cosmetics: #EC4899;
+  --color-brand-hair: #38BDF8;
+}
+
+body {
+  background-color: var(--color-brand-navy-dark);
+  color: #E2E8F0;
+}
