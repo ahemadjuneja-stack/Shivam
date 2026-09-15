@@ -6,21 +6,43 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.example.data.model.CatalogPhoto
+import com.example.data.model.CategoryItem
 import com.example.data.model.Customer
 import com.example.data.model.SubCategory
 import com.example.data.model.WholesaleOrder
 import kotlinx.coroutines.flow.Flow
 
 @Dao
+interface CategoryDao {
+    @Query("SELECT * FROM app_categories ORDER BY sortOrder ASC, id ASC")
+    fun getAllCategories(): Flow<List<CategoryItem>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCategory(category: CategoryItem)
+
+    @Query("UPDATE app_categories SET thumbnailUrl = :thumbnailUrl WHERE id = :id")
+    suspend fun updateCategoryThumbnail(id: String, thumbnailUrl: String)
+
+    @Query("DELETE FROM app_categories WHERE id = :id")
+    suspend fun deleteCategory(id: String)
+
+    @Query("SELECT COUNT(*) FROM app_categories")
+    suspend fun count(): Int
+}
+
+@Dao
 interface SubCategoryDao {
-    @Query("SELECT * FROM subcategories WHERE categoryId = :categoryId ORDER BY name ASC")
+    @Query("SELECT * FROM subcategories WHERE categoryId = :categoryId ORDER BY sortOrder ASC, name ASC")
     fun getSubCategories(categoryId: String): Flow<List<SubCategory>>
 
-    @Query("SELECT * FROM subcategories ORDER BY name ASC")
+    @Query("SELECT * FROM subcategories ORDER BY sortOrder ASC, name ASC")
     fun getAllSubCategories(): Flow<List<SubCategory>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSubCategory(subCategory: SubCategory): Long
+
+    @Query("UPDATE subcategories SET thumbnailUrl = :thumbnailUrl WHERE id = :id")
+    suspend fun updateSubCategoryThumbnail(id: Long, thumbnailUrl: String)
 
     @Query("DELETE FROM subcategories WHERE id = :id")
     suspend fun deleteSubCategory(id: Long)
@@ -31,13 +53,13 @@ interface SubCategoryDao {
 
 @Dao
 interface CatalogPhotoDao {
-    @Query("SELECT * FROM catalog_photos WHERE subCategoryId = :subCategoryId ORDER BY id DESC")
+    @Query("SELECT * FROM catalog_photos WHERE subCategoryId = :subCategoryId ORDER BY sortOrder ASC, id ASC")
     fun getPhotosBySubCategory(subCategoryId: Long): Flow<List<CatalogPhoto>>
 
-    @Query("SELECT * FROM catalog_photos WHERE categoryId = :categoryId ORDER BY id DESC")
+    @Query("SELECT * FROM catalog_photos WHERE categoryId = :categoryId ORDER BY sortOrder ASC, id ASC")
     fun getPhotosByCategory(categoryId: String): Flow<List<CatalogPhoto>>
 
-    @Query("SELECT * FROM catalog_photos ORDER BY id DESC")
+    @Query("SELECT * FROM catalog_photos ORDER BY sortOrder ASC, id ASC")
     fun getAllPhotos(): Flow<List<CatalogPhoto>>
 
     @Query("SELECT * FROM catalog_photos WHERE id = :id LIMIT 1")
@@ -48,6 +70,9 @@ interface CatalogPhotoDao {
 
     @Update
     suspend fun updatePhoto(photo: CatalogPhoto)
+
+    @Query("UPDATE catalog_photos SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun updateSortOrder(id: Long, sortOrder: Int)
 
     @Query("""
         UPDATE catalog_photos 

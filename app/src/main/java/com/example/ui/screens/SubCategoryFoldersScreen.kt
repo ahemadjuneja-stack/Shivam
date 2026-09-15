@@ -22,37 +22,32 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.ShoppingBag
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.data.model.SubCategory
 import com.example.ui.AppScreen
 import com.example.ui.WholesaleViewModel
@@ -67,79 +62,17 @@ fun SubCategoryFoldersScreen(
     val allPhotos by viewModel.allPhotos.collectAsStateWithLifecycle()
     val cartItems by viewModel.cartItems.collectAsStateWithLifecycle()
 
-    var showNewFolderDialog by remember { mutableStateOf(false) }
-    var newFolderName by remember { mutableStateOf("") }
-
-    if (showNewFolderDialog) {
-        AlertDialog(
-            onDismissRequest = { showNewFolderDialog = false },
-            containerColor = Color(0xFF111F3D),
-            title = {
-                Text(
-                    text = "Add New Subcategory Folder",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column {
-                    Text(
-                        text = "Category: ${selectedCategory.displayName}",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 13.sp
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = newFolderName,
-                        onValueChange = { newFolderName = it },
-                        placeholder = { Text("e.g. Mangalsutra, Bridal Chuda, etc.") },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("input_new_folder_name"),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFFF59E0B),
-                            unfocusedBorderColor = Color(0xFF27417D)
-                        )
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newFolderName.isNotBlank()) {
-                            viewModel.addSubCategoryFolder(selectedCategory.id, newFolderName.trim())
-                            newFolderName = ""
-                            showNewFolderDialog = false
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
-                    modifier = Modifier.testTag("btn_confirm_add_folder")
-                ) {
-                    Text("Create Folder", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNewFolderDialog = false }) {
-                    Text("Cancel", color = Color(0xFF94A3B8))
-                }
-            }
-        )
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF070E1E))
     ) {
-        // Top Header
+        // Customer Top Header (Pure read-only browsing)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color(0xFF0C172E))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -176,69 +109,43 @@ fun SubCategoryFoldersScreen(
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(
-                    onClick = { showNewFolderDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF142244)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B)),
-                    modifier = Modifier
-                        .height(38.dp)
-                        .testTag("btn_add_folder")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CreateNewFolder,
-                        contentDescription = null,
-                        tint = Color(0xFFF59E0B),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "+ NEW FOLDER",
-                        color = Color(0xFFFDE68A),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                val totalInCart = cartItems.sumOf { it.quantity }
-                IconButton(
-                    onClick = { viewModel.navigateTo(AppScreen.CART) },
-                    modifier = Modifier
-                        .testTag("folders_cart_button")
-                        .background(Color(0xFF142244), CircleShape)
-                        .size(38.dp)
-                ) {
-                    BadgedBox(
-                        badge = {
-                            if (totalInCart > 0) {
-                                Badge(containerColor = Color(0xFFF59E0B)) {
-                                    Text(
-                                        text = "$totalInCart",
-                                        color = Color.Black,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+            // Customer Cart Button
+            val totalInCart = cartItems.sumOf { it.quantity }
+            IconButton(
+                onClick = { viewModel.navigateTo(AppScreen.CART) },
+                modifier = Modifier
+                    .testTag("folders_cart_button")
+                    .background(Color(0xFF142244), CircleShape)
+                    .size(38.dp)
+            ) {
+                BadgedBox(
+                    badge = {
+                        if (totalInCart > 0) {
+                            Badge(containerColor = Color(0xFFF59E0B)) {
+                                Text(
+                                    text = "$totalInCart",
+                                    color = Color.Black,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ShoppingBag,
-                            contentDescription = "Cart",
-                            tint = Color(0xFFFDE68A)
-                        )
                     }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ShoppingBag,
+                        contentDescription = "Cart",
+                        tint = Color(0xFFFDE68A)
+                    )
                 }
             }
         }
 
-        // Subcategory Folders Grid
+        // Subcategory Folders Grid: Large prominent thumbnail on top, small font name underneath!
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 220.dp),
-            contentPadding = PaddingValues(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            columns = GridCells.Adaptive(minSize = 150.dp),
+            contentPadding = PaddingValues(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize()
         ) {
             items(subCategories) { sub ->
@@ -253,6 +160,12 @@ fun SubCategoryFoldersScreen(
     }
 }
 
+/**
+ * Subcategory Folder Card:
+ * - Prominent Thumbnail image on top (large view)
+ * - Underneath the thumbnail: folder name in small, neat font with designs count.
+ * - Read-only for wholesale customers (no delete or edit options).
+ */
 @Composable
 private fun SubCategoryFolderCard(
     subCategory: SubCategory,
@@ -262,50 +175,67 @@ private fun SubCategoryFolderCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(110.dp)
             .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0xFF27417D), RoundedCornerShape(12.dp))
+            .border(1.dp, Color(0xFF223663), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .testTag("folder_card_${subCategory.id}"),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF111F3D))
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1B36))
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
-            // Folder Icon Box
+            // 1. Large, Prominent Thumbnail Image
             Box(
                 modifier = Modifier
-                    .size(52.dp)
-                    .background(Color(0xFF17284F), RoundedCornerShape(10.dp))
-                    .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f), RoundedCornerShape(10.dp)),
+                    .fillMaxWidth()
+                    .height(130.dp)
+                    .background(Color(0xFF17284F)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Folder,
-                    contentDescription = null,
-                    tint = Color(0xFFF59E0B),
-                    modifier = Modifier.size(30.dp)
-                )
+                if (subCategory.thumbnailUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(subCategory.thumbnailUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = subCategory.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = null,
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(46.dp)
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
+            // 2. Thumbnail ke niche: Chote font me subcategory ka naam
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0C162D))
+                    .padding(horizontal = 8.dp, vertical = 7.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
                     text = subCategory.name,
                     color = Color.White,
-                    fontSize = 15.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 2
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "$photoCount Wholesale Designs",
                     color = Color(0xFF94A3B8),
-                    fontSize = 12.sp
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center
                 )
             }
         }

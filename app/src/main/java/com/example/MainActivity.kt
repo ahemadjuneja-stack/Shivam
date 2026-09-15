@@ -31,6 +31,7 @@ import com.example.ui.theme.MyApplicationTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
@@ -104,6 +105,9 @@ fun WholesaleApp(
                         cartItems = cartItems,
                         onOptionSelected = { photo, optionLetter, qty ->
                             viewModel.addToCart(photo, optionLetter, qty)
+                        },
+                        onOptionDecreased = { photo, optionLetter, qty ->
+                            viewModel.decreaseCartItem(photo, optionLetter, qty)
                         },
                         onIndexChanged = { newIdx ->
                             viewModel.openPhotoInViewer(newIdx)

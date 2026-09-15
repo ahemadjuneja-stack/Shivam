@@ -5,21 +5,24 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.example.data.model.CatalogPhoto
+import com.example.data.model.CategoryItem
 import com.example.data.model.Customer
 import com.example.data.model.SubCategory
 import com.example.data.model.WholesaleOrder
 
 @Database(
     entities = [
+        CategoryItem::class,
         SubCategory::class,
         CatalogPhoto::class,
         Customer::class,
         WholesaleOrder::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
+    abstract fun categoryDao(): CategoryDao
     abstract fun subCategoryDao(): SubCategoryDao
     abstract fun catalogPhotoDao(): CatalogPhotoDao
     abstract fun customerDao(): CustomerDao

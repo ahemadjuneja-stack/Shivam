@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Spa
@@ -45,11 +46,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.data.model.Customer
 import com.example.data.model.MainCategory
 import com.example.ui.AppScreen
@@ -68,6 +75,7 @@ fun HomeScreen(
     val userRole by viewModel.userRole.collectAsStateWithLifecycle()
     val allSubCategories by viewModel.allSubCategories.collectAsStateWithLifecycle()
     val allPhotos by viewModel.allPhotos.collectAsStateWithLifecycle()
+    val allCategories by viewModel.allCategories.collectAsStateWithLifecycle()
 
     var showLoginDialog by remember { mutableStateOf(false) }
 
@@ -121,58 +129,59 @@ fun HomeScreen(
                     }
                 )
 
-                // Right Half: The 3 Main Wholesale Categories
-                Column(
+                // Right Half: The 3 Main Wholesale Categories in Landscape (Side-by-Side Vertical Cards)
+                Row(
                     modifier = Modifier
                         .weight(1.3f)
                         .fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    val imitationCat = allCategories.find { it.id == MainCategory.IMITATION.id }
+                    val cosmeticsCat = allCategories.find { it.id == MainCategory.COSMETICS.id }
+                    val hairCat = allCategories.find { it.id == MainCategory.HAIR_ACCESSORIES.id }
+
                     CategoryBannerCard(
                         category = MainCategory.IMITATION,
-                        title = "Imitation Jewelry",
-                        subtitle = "Earrings, Necklaces, Bangles & Rings",
+                        title = imitationCat?.displayName ?: "Imitation Jewelry",
                         folderCount = allSubCategories.count { it.categoryId == MainCategory.IMITATION.id },
                         photoCount = allPhotos.count { it.categoryId == MainCategory.IMITATION.id },
+                        thumbnailUrl = imitationCat?.thumbnailUrl.orEmpty(),
                         accentColor = Color(0xFFF59E0B),
-                        gradientColors = listOf(Color(0xFF17284F), Color(0xFF0E1A36)),
                         icon = Icons.Default.Diamond,
                         onClick = { viewModel.selectCategory(MainCategory.IMITATION) },
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth()
+                            .fillMaxHeight()
                             .testTag("category_imitation_card")
                     )
 
                     CategoryBannerCard(
                         category = MainCategory.COSMETICS,
-                        title = "Cosmetics & Beauty",
-                        subtitle = "Lipsticks, Nail Polish, Compact & Kajal",
+                        title = cosmeticsCat?.displayName ?: "Cosmetics & Beauty",
                         folderCount = allSubCategories.count { it.categoryId == MainCategory.COSMETICS.id },
                         photoCount = allPhotos.count { it.categoryId == MainCategory.COSMETICS.id },
+                        thumbnailUrl = cosmeticsCat?.thumbnailUrl.orEmpty(),
                         accentColor = Color(0xFFEC4899),
-                        gradientColors = listOf(Color(0xFF241838), Color(0xFF10132B)),
                         icon = Icons.Default.Spa,
                         onClick = { viewModel.selectCategory(MainCategory.COSMETICS) },
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth()
+                            .fillMaxHeight()
                             .testTag("category_cosmetics_card")
                     )
 
                     CategoryBannerCard(
                         category = MainCategory.HAIR_ACCESSORIES,
-                        title = "Hair Accessories",
-                        subtitle = "Clips, Claws, Hair Bands & Scrunchies",
+                        title = hairCat?.displayName ?: "Hair Accessories",
                         folderCount = allSubCategories.count { it.categoryId == MainCategory.HAIR_ACCESSORIES.id },
                         photoCount = allPhotos.count { it.categoryId == MainCategory.HAIR_ACCESSORIES.id },
+                        thumbnailUrl = hairCat?.thumbnailUrl.orEmpty(),
                         accentColor = Color(0xFF38BDF8),
-                        gradientColors = listOf(Color(0xFF11264B), Color(0xFF0A1833)),
                         icon = Icons.Default.Face,
                         onClick = { viewModel.selectCategory(MainCategory.HAIR_ACCESSORIES) },
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth()
+                            .fillMaxHeight()
                             .testTag("category_hair_card")
                     )
                 }
@@ -322,89 +331,92 @@ private fun HomeTopBar(
 private fun CategoryBannerCard(
     category: MainCategory,
     title: String,
-    subtitle: String,
     folderCount: Int,
     photoCount: Int,
+    thumbnailUrl: String = "",
     accentColor: Color,
-    gradientColors: List<Color>,
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1B36))
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Brush.horizontalGradient(gradientColors))
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 1. Prominent Large Thumbnail Box on Top
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(Color(0xFF14244A)),
+                contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(accentColor.copy(alpha = 0.2f), CircleShape)
-                            .border(1.dp, accentColor, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = title,
-                            tint = accentColor,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Column {
-                        Text(
-                            text = title.uppercase(),
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 0.5.sp
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = subtitle,
-                            color = Color(0xFFCBD5E1),
-                            fontSize = 11.sp
-                        )
-                    }
+                if (thumbnailUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(thumbnailUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = accentColor,
+                        modifier = Modifier.size(48.dp)
+                    )
                 }
 
-                // Subcategory folder count chip
+                // Small badge on top right for folder count
                 Box(
                     modifier = Modifier
-                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                        .border(0.8.dp, accentColor.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(6.dp))
+                        .border(0.6.dp, accentColor.copy(alpha = 0.8f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "$folderCount Folders",
-                            color = accentColor,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "$photoCount Photos",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 10.sp
-                        )
-                    }
+                    Text(
+                        text = "$folderCount Folders",
+                        color = accentColor,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
+            }
+
+            // 2. Thumbnail ke niche: Chote font me Category ka naam!
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0C162D))
+                    .padding(horizontal = 8.dp, vertical = 7.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "$photoCount Wholesale Designs",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }

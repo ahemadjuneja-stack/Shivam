@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
 import com.example.data.model.CatalogPhoto
+import com.example.data.model.CategoryItem
 import com.example.data.model.Customer
 import com.example.data.model.MainCategory
 import com.example.data.model.OrderCartItem
@@ -80,6 +81,9 @@ class WholesaleViewModel(application: Application) : AndroidViewModel(applicatio
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
     // Database Observables
+    val allCategories: StateFlow<List<CategoryItem>> = repository.getAllCategories()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val allSubCategories: StateFlow<List<SubCategory>> = repository.getAllSubCategories()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -209,6 +213,25 @@ class WholesaleViewModel(application: Application) : AndroidViewModel(applicatio
         _toastMessage.value = "Added Item $optionLetter to Cart (+ $quantity pcs)"
     }
 
+    fun decreaseCartItem(photo: CatalogPhoto, optionLetter: String, quantity: Int = photo.defaultQuantity) {
+        val current = _cartItems.value.toMutableList()
+        val index = current.indexOfFirst {
+            it.photoId == photo.id && it.optionLetter.equals(optionLetter, ignoreCase = true)
+        }
+        if (index >= 0) {
+            val existing = current[index]
+            val newQty = existing.quantity - quantity
+            if (newQty <= 0) {
+                current.removeAt(index)
+                _toastMessage.value = "Removed Item $optionLetter from Cart"
+            } else {
+                current[index] = existing.copy(quantity = newQty)
+                _toastMessage.value = "Reduced Item $optionLetter (-$quantity pcs, Now: $newQty)"
+            }
+            _cartItems.value = current
+        }
+    }
+
     fun updateCartItemQuantity(photoId: Long, optionLetter: String, newQty: Int) {
         val current = _cartItems.value.toMutableList()
         val index = current.indexOfFirst { it.photoId == photoId && it.optionLetter == optionLetter }
@@ -265,7 +288,8 @@ class WholesaleViewModel(application: Application) : AndroidViewModel(applicatio
         photoCode: String,
         imageUri: String,
         itemCount: Int,
-        description: String
+        description: String,
+        sortOrder: Int = 10
     ) {
         viewModelScope.launch {
             val photo = CatalogPhoto(
@@ -279,10 +303,19 @@ class WholesaleViewModel(application: Application) : AndroidViewModel(applicatio
                 bAvailable = true,
                 cAvailable = true,
                 dAvailable = true,
+                defaultQuantity = 1,
+                sortOrder = sortOrder,
                 description = description
             )
             repository.addPhoto(photo)
-            _toastMessage.value = "New Photo #${photo.photoCode} Added to Catalog!"
+            _toastMessage.value = "Photo #${photo.photoCode} (Seq: $sortOrder) Added to Catalog!"
+        }
+    }
+
+    fun updatePhotoSortOrder(photoId: Long, sortOrder: Int) {
+        viewModelScope.launch {
+            repository.updatePhotoSortOrder(photoId, sortOrder)
+            _toastMessage.value = "Sequence Order Updated to $sortOrder"
         }
     }
 
@@ -293,10 +326,51 @@ class WholesaleViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun addSubCategoryFolder(categoryId: String, name: String) {
+    // Category Management
+    fun addCategory(
+        id: String,
+        displayName: String,
+        hindiName: String = "",
+        thumbnailUrl: String = "",
+        accentColorHex: String = "#F59E0B"
+    ) {
         viewModelScope.launch {
-            repository.addSubCategory(categoryId, name)
+            repository.addCategory(id, displayName, hindiName, thumbnailUrl, accentColorHex)
+            _toastMessage.value = "Category '$displayName' Added!"
+        }
+    }
+
+    fun updateCategoryThumbnail(id: String, thumbnailUrl: String) {
+        viewModelScope.launch {
+            repository.updateCategoryThumbnail(id, thumbnailUrl)
+            _toastMessage.value = "Category Thumbnail Updated!"
+        }
+    }
+
+    fun deleteCategory(id: String) {
+        viewModelScope.launch {
+            repository.deleteCategory(id)
+            _toastMessage.value = "Category deleted"
+        }
+    }
+
+    // SubCategory Folder Management
+    fun addSubCategoryFolder(
+        categoryId: String,
+        name: String,
+        thumbnailUrl: String = "",
+        sortOrder: Int = 0
+    ) {
+        viewModelScope.launch {
+            repository.addSubCategory(categoryId, name, thumbnailUrl, sortOrder)
             _toastMessage.value = "New Folder '$name' Created!"
+        }
+    }
+
+    fun updateSubCategoryThumbnail(id: Long, thumbnailUrl: String) {
+        viewModelScope.launch {
+            repository.updateSubCategoryThumbnail(id, thumbnailUrl)
+            _toastMessage.value = "Folder Thumbnail Updated!"
         }
     }
 

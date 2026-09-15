@@ -3,6 +3,7 @@ package com.example.data.repository
 import com.example.data.local.AppDatabase
 import com.example.data.local.InitialData
 import com.example.data.model.CatalogPhoto
+import com.example.data.model.CategoryItem
 import com.example.data.model.Customer
 import com.example.data.model.OrderCartItem
 import com.example.data.model.SubCategory
@@ -17,6 +18,7 @@ import org.json.JSONObject
 import kotlin.random.Random
 
 class WholesaleRepository(private val database: AppDatabase) {
+    private val categoryDao = database.categoryDao()
     private val subCategoryDao = database.subCategoryDao()
     private val photoDao = database.catalogPhotoDao()
     private val customerDao = database.customerDao()
@@ -29,6 +31,11 @@ class WholesaleRepository(private val database: AppDatabase) {
     }
 
     suspend fun seedInitialDataIfNeeded() = withContext(Dispatchers.IO) {
+        if (categoryDao.count() == 0) {
+            for (cat in InitialData.initialCategories) {
+                categoryDao.insertCategory(cat)
+            }
+        }
         if (subCategoryDao.count() == 0) {
             for (sub in InitialData.initialSubCategories) {
                 subCategoryDao.insertSubCategory(sub)
@@ -51,6 +58,35 @@ class WholesaleRepository(private val database: AppDatabase) {
         }
     }
 
+    // Categories
+    fun getAllCategories(): Flow<List<CategoryItem>> =
+        categoryDao.getAllCategories()
+
+    suspend fun addCategory(
+        id: String,
+        displayName: String,
+        hindiName: String = "",
+        thumbnailUrl: String = "",
+        accentColorHex: String = "#F59E0B"
+    ) = withContext(Dispatchers.IO) {
+        val cat = CategoryItem(
+            id = id.trim().lowercase().replace(" ", "_"),
+            displayName = displayName.trim(),
+            hindiName = hindiName.trim(),
+            thumbnailUrl = thumbnailUrl.trim(),
+            accentColorHex = accentColorHex
+        )
+        categoryDao.insertCategory(cat)
+    }
+
+    suspend fun updateCategoryThumbnail(id: String, thumbnailUrl: String) = withContext(Dispatchers.IO) {
+        categoryDao.updateCategoryThumbnail(id, thumbnailUrl)
+    }
+
+    suspend fun deleteCategory(id: String) = withContext(Dispatchers.IO) {
+        categoryDao.deleteCategory(id)
+    }
+
     // SubCategories
     fun getSubCategories(categoryId: String): Flow<List<SubCategory>> =
         subCategoryDao.getSubCategories(categoryId)
@@ -58,13 +94,24 @@ class WholesaleRepository(private val database: AppDatabase) {
     fun getAllSubCategories(): Flow<List<SubCategory>> =
         subCategoryDao.getAllSubCategories()
 
-    suspend fun addSubCategory(categoryId: String, name: String): Long = withContext(Dispatchers.IO) {
+    suspend fun addSubCategory(
+        categoryId: String,
+        name: String,
+        thumbnailUrl: String = "",
+        sortOrder: Int = 0
+    ): Long = withContext(Dispatchers.IO) {
         val sub = SubCategory(
             categoryId = categoryId,
             name = name,
-            iconName = "folder"
+            iconName = "folder",
+            thumbnailUrl = thumbnailUrl,
+            sortOrder = sortOrder
         )
         subCategoryDao.insertSubCategory(sub)
+    }
+
+    suspend fun updateSubCategoryThumbnail(id: Long, thumbnailUrl: String) = withContext(Dispatchers.IO) {
+        subCategoryDao.updateSubCategoryThumbnail(id, thumbnailUrl)
     }
 
     suspend fun deleteSubCategory(id: Long) = withContext(Dispatchers.IO) {
@@ -86,6 +133,10 @@ class WholesaleRepository(private val database: AppDatabase) {
 
     suspend fun addPhoto(photo: CatalogPhoto): Long = withContext(Dispatchers.IO) {
         photoDao.insertPhoto(photo)
+    }
+
+    suspend fun updatePhotoSortOrder(id: Long, sortOrder: Int) = withContext(Dispatchers.IO) {
+        photoDao.updateSortOrder(id, sortOrder)
     }
 
     suspend fun updateStock(id: Long, a: Boolean, b: Boolean, c: Boolean, d: Boolean) = withContext(Dispatchers.IO) {

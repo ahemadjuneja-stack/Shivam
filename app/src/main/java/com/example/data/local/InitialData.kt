@@ -1,6 +1,7 @@
 package com.example.data.local
 
 import com.example.data.model.CatalogPhoto
+import com.example.data.model.CategoryItem
 import com.example.data.model.Customer
 import com.example.data.model.MainCategory
 import com.example.data.model.OrderCartItem
@@ -10,25 +11,156 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object InitialData {
+    val initialCategories = listOf(
+        CategoryItem(
+            id = MainCategory.IMITATION.id,
+            displayName = "Imitation Jewelry",
+            hindiName = "इमिटेशन ज्वेलरी",
+            thumbnailUrl = "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=600&auto=format&fit=crop&q=80",
+            accentColorHex = "#F59E0B",
+            sortOrder = 1
+        ),
+        CategoryItem(
+            id = MainCategory.COSMETICS.id,
+            displayName = "Cosmetics",
+            hindiName = "कॉस्मेटिक्स",
+            thumbnailUrl = "https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=600&auto=format&fit=crop&q=80",
+            accentColorHex = "#EC4899",
+            sortOrder = 2
+        ),
+        CategoryItem(
+            id = MainCategory.HAIR_ACCESSORIES.id,
+            displayName = "Hair Accessories",
+            hindiName = "हेयर एक्सेसरीज",
+            thumbnailUrl = "https://images.unsplash.com/photo-1608248597359-0a6134b29402?w=600&auto=format&fit=crop&q=80",
+            accentColorHex = "#38BDF8",
+            sortOrder = 3
+        )
+    )
+
     val initialSubCategories = listOf(
         // Imitation
-        SubCategory(id = 1, categoryId = MainCategory.IMITATION.id, name = "Earrings (झुमके/बाली)", iconName = "earrings", photoCount = 6),
-        SubCategory(id = 2, categoryId = MainCategory.IMITATION.id, name = "Necklace Sets (हार सेट)", iconName = "necklace", photoCount = 4),
-        SubCategory(id = 3, categoryId = MainCategory.IMITATION.id, name = "Bangles & Kada (चूड़ियां)", iconName = "bangles", photoCount = 4),
-        SubCategory(id = 4, categoryId = MainCategory.IMITATION.id, name = "Finger Rings (अंगूठियां)", iconName = "rings", photoCount = 3),
-        SubCategory(id = 5, categoryId = MainCategory.IMITATION.id, name = "Anklets / Payal (पायल)", iconName = "anklets", photoCount = 3),
+        SubCategory(
+            id = 1,
+            categoryId = MainCategory.IMITATION.id,
+            name = "Earrings (झुमके/बाली)",
+            iconName = "earrings",
+            thumbnailUrl = "https://images.unsplash.com/photo-1630019852942-f89202989a59?w=400&auto=format&fit=crop&q=80",
+            photoCount = 6,
+            sortOrder = 1
+        ),
+        SubCategory(
+            id = 2,
+            categoryId = MainCategory.IMITATION.id,
+            name = "Necklace Sets (हार सेट)",
+            iconName = "necklace",
+            thumbnailUrl = "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=400&auto=format&fit=crop&q=80",
+            photoCount = 4,
+            sortOrder = 2
+        ),
+        SubCategory(
+            id = 3,
+            categoryId = MainCategory.IMITATION.id,
+            name = "Bangles & Kada (चूड़ियां)",
+            iconName = "bangles",
+            thumbnailUrl = "https://images.unsplash.com/photo-1611591475877-2f7b8849b251?w=400&auto=format&fit=crop&q=80",
+            photoCount = 4,
+            sortOrder = 3
+        ),
+        SubCategory(
+            id = 4,
+            categoryId = MainCategory.IMITATION.id,
+            name = "Finger Rings (अंगूठियां)",
+            iconName = "rings",
+            thumbnailUrl = "https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=400&auto=format&fit=crop&q=80",
+            photoCount = 3,
+            sortOrder = 4
+        ),
+        SubCategory(
+            id = 5,
+            categoryId = MainCategory.IMITATION.id,
+            name = "Anklets / Payal (पायल)",
+            iconName = "anklets",
+            thumbnailUrl = "https://images.unsplash.com/photo-1611652022419-a9419f74343d?w=400&auto=format&fit=crop&q=80",
+            photoCount = 3,
+            sortOrder = 5
+        ),
 
         // Cosmetics
-        SubCategory(id = 6, categoryId = MainCategory.COSMETICS.id, name = "Lipsticks & Liquid Matte", iconName = "lipstick", photoCount = 5),
-        SubCategory(id = 7, categoryId = MainCategory.COSMETICS.id, name = "Nail Polish Sets (नेल पेंट)", iconName = "nailpolish", photoCount = 4),
-        SubCategory(id = 8, categoryId = MainCategory.COSMETICS.id, name = "Kajal & Eye Liners", iconName = "eyeliner", photoCount = 4),
-        SubCategory(id = 9, categoryId = MainCategory.COSMETICS.id, name = "Foundation & Compact", iconName = "compact", photoCount = 3),
+        SubCategory(
+            id = 6,
+            categoryId = MainCategory.COSMETICS.id,
+            name = "Lipsticks & Liquid Matte",
+            iconName = "lipstick",
+            thumbnailUrl = "https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=400&auto=format&fit=crop&q=80",
+            photoCount = 5,
+            sortOrder = 6
+        ),
+        SubCategory(
+            id = 7,
+            categoryId = MainCategory.COSMETICS.id,
+            name = "Nail Polish Sets (नेल पेंट)",
+            iconName = "nailpolish",
+            thumbnailUrl = "https://images.unsplash.com/photo-1632345031435-8727f6897d53?w=400&auto=format&fit=crop&q=80",
+            photoCount = 4,
+            sortOrder = 7
+        ),
+        SubCategory(
+            id = 8,
+            categoryId = MainCategory.COSMETICS.id,
+            name = "Kajal & Eye Liners",
+            iconName = "eyeliner",
+            thumbnailUrl = "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?w=400&auto=format&fit=crop&q=80",
+            photoCount = 4,
+            sortOrder = 8
+        ),
+        SubCategory(
+            id = 9,
+            categoryId = MainCategory.COSMETICS.id,
+            name = "Foundation & Compact",
+            iconName = "compact",
+            thumbnailUrl = "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=400&auto=format&fit=crop&q=80",
+            photoCount = 3,
+            sortOrder = 9
+        ),
 
         // Hair Accessories
-        SubCategory(id = 10, categoryId = MainCategory.HAIR_ACCESSORIES.id, name = "Claw Clips & Clutches", iconName = "hairclip", photoCount = 5),
-        SubCategory(id = 11, categoryId = MainCategory.HAIR_ACCESSORIES.id, name = "Scrunchies & Hair Ties", iconName = "scrunchie", photoCount = 4),
-        SubCategory(id = 12, categoryId = MainCategory.HAIR_ACCESSORIES.id, name = "Hair Bands & Tiaras", iconName = "hairband", photoCount = 4),
-        SubCategory(id = 13, categoryId = MainCategory.HAIR_ACCESSORIES.id, name = "Banana & Duckbill Clips", iconName = "bananaclip", photoCount = 3)
+        SubCategory(
+            id = 10,
+            categoryId = MainCategory.HAIR_ACCESSORIES.id,
+            name = "Claw Clips & Clutches",
+            iconName = "hairclip",
+            thumbnailUrl = "https://images.unsplash.com/photo-1522337094133-f4ce4814fb9a?w=400&auto=format&fit=crop&q=80",
+            photoCount = 5,
+            sortOrder = 10
+        ),
+        SubCategory(
+            id = 11,
+            categoryId = MainCategory.HAIR_ACCESSORIES.id,
+            name = "Scrunchies & Hair Ties",
+            iconName = "scrunchie",
+            thumbnailUrl = "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=400&auto=format&fit=crop&q=80",
+            photoCount = 4,
+            sortOrder = 11
+        ),
+        SubCategory(
+            id = 12,
+            categoryId = MainCategory.HAIR_ACCESSORIES.id,
+            name = "Hair Bands & Tiaras",
+            iconName = "hairband",
+            thumbnailUrl = "https://images.unsplash.com/photo-1584208124888-3a20b9c799e2?w=400&auto=format&fit=crop&q=80",
+            photoCount = 4,
+            sortOrder = 12
+        ),
+        SubCategory(
+            id = 13,
+            categoryId = MainCategory.HAIR_ACCESSORIES.id,
+            name = "Banana & Duckbill Clips",
+            iconName = "bananaclip",
+            thumbnailUrl = "https://images.unsplash.com/photo-1597225244660-1cd128c64284?w=400&auto=format&fit=crop&q=80",
+            photoCount = 3,
+            sortOrder = 13
+        )
     )
 
     val initialPhotos = listOf(

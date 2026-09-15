@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,10 +23,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
@@ -53,12 +59,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.data.model.CatalogPhoto
+import com.example.data.model.CategoryItem
 import com.example.data.model.Customer
 import com.example.data.model.MainCategory
 import com.example.data.model.SubCategory
@@ -76,6 +90,7 @@ fun AdminDashboardScreen(
     val photos by viewModel.allPhotos.collectAsStateWithLifecycle()
     val subCategories by viewModel.allSubCategories.collectAsStateWithLifecycle()
     val customers by viewModel.allCustomers.collectAsStateWithLifecycle()
+    val categories by viewModel.allCategories.collectAsStateWithLifecycle()
 
     var activeTab by remember { mutableIntStateOf(0) }
     // 0: Orders, 1: Catalog & ABCD Stock, 2: Folders, 3: Customers
@@ -83,6 +98,14 @@ fun AdminDashboardScreen(
     var showAddPhotoDialog by remember { mutableStateOf(false) }
     var showAddCustomerDialog by remember { mutableStateOf(false) }
     var showAddFolderDialog by remember { mutableStateOf(false) }
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var showWebDashboardDialog by remember { mutableStateOf(false) }
+
+    var categoryToEditThumbnail by remember { mutableStateOf<CategoryItem?>(null) }
+    var subCategoryToEditThumbnail by remember { mutableStateOf<SubCategory?>(null) }
+    var categoryToDelete by remember { mutableStateOf<CategoryItem?>(null) }
+    var subCategoryToDelete by remember { mutableStateOf<SubCategory?>(null) }
+    var photoToEditSortOrder by remember { mutableStateOf<CatalogPhoto?>(null) }
 
     Column(
         modifier = modifier
@@ -131,12 +154,36 @@ fun AdminDashboardScreen(
                 }
             }
 
-            // Quick Stats Bar
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AdminStatChip(label = "Orders", value = "${orders.size}")
-                AdminStatChip(label = "Photos", value = "${photos.size}")
+            // Quick Stats Bar & Web Portal Button
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AdminStatChip(label = "Categories", value = "${categories.size}")
                 AdminStatChip(label = "Folders", value = "${subCategories.size}")
-                AdminStatChip(label = "Clients", value = "${customers.size}")
+                AdminStatChip(label = "Photos", value = "${photos.size}")
+                AdminStatChip(label = "Orders", value = "${orders.size}")
+
+                Button(
+                    onClick = { showWebDashboardDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("btn_open_web_portal")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Language,
+                        contentDescription = "Web Portal",
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Web Portal Link",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
             }
         }
 
@@ -162,7 +209,7 @@ fun AdminDashboardScreen(
                 selected = activeTab == 2,
                 onClick = { activeTab = 2 },
                 icon = { Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                text = { Text("Subcategory Folders", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                text = { Text("Categories & Folders", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
             )
             Tab(
                 selected = activeTab == 3,
@@ -193,12 +240,19 @@ fun AdminDashboardScreen(
                         viewModel.togglePhotoOptionStock(photo, opt, status)
                     },
                     onDeletePhoto = { viewModel.deletePhoto(it) },
-                    onOpenAddPhoto = { showAddPhotoDialog = true }
+                    onOpenAddPhoto = { showAddPhotoDialog = true },
+                    onEditSortOrder = { photoToEditSortOrder = it }
                 )
-                2 -> AdminFoldersTab(
+                2 -> AdminCategoriesAndFoldersTab(
+                    categories = categories,
                     subCategories = subCategories,
+                    allPhotos = photos,
+                    onAddCategory = { showAddCategoryDialog = true },
+                    onEditCategoryThumbnail = { categoryToEditThumbnail = it },
+                    onDeleteCategory = { categoryToDelete = it },
                     onAddFolder = { showAddFolderDialog = true },
-                    onDeleteFolder = { viewModel.deleteSubCategoryFolder(it) }
+                    onEditSubCategoryThumbnail = { subCategoryToEditThumbnail = it },
+                    onDeleteFolder = { subCategoryToDelete = subCategories.find { sub -> sub.id == it } }
                 )
                 3 -> AdminCustomersTab(
                     customers = customers,
@@ -212,10 +266,11 @@ fun AdminDashboardScreen(
     // Dialog: Add Photo
     if (showAddPhotoDialog) {
         AddPhotoDialog(
+            categories = categories,
             subCategories = subCategories,
             onDismiss = { showAddPhotoDialog = false },
-            onAdd = { catId, subId, subName, code, uri, items, desc ->
-                viewModel.addCatalogPhoto(catId, subId, subName, code, uri, items, desc)
+            onAdd = { catId, subId, subName, code, uri, items, desc, sortOrder ->
+                viewModel.addCatalogPhoto(catId, subId, subName, code, uri, items, desc, sortOrder)
                 showAddPhotoDialog = false
             }
         )
@@ -235,11 +290,95 @@ fun AdminDashboardScreen(
     // Dialog: Add Folder
     if (showAddFolderDialog) {
         AddFolderDialog(
+            categories = categories,
             onDismiss = { showAddFolderDialog = false },
-            onSave = { catId, name ->
-                viewModel.addSubCategoryFolder(catId, name)
+            onSave = { catId, name, thumbUrl, sortOrder ->
+                viewModel.addSubCategoryFolder(catId, name, thumbUrl, sortOrder)
                 showAddFolderDialog = false
             }
+        )
+    }
+
+    // Dialog: Add Category
+    if (showAddCategoryDialog) {
+        AddCategoryDialog(
+            onDismiss = { showAddCategoryDialog = false },
+            onSave = { id, name, hindiName, thumbUrl, colorHex ->
+                viewModel.addCategory(id, name, hindiName, thumbUrl, colorHex)
+                showAddCategoryDialog = false
+            }
+        )
+    }
+
+    // Dialog: Change Category Thumbnail
+    categoryToEditThumbnail?.let { cat ->
+        ChangeThumbnailDialog(
+            title = "Change Thumbnail: ${cat.displayName}",
+            initialUrl = cat.thumbnailUrl,
+            onDismiss = { categoryToEditThumbnail = null },
+            onSave = { newUrl ->
+                viewModel.updateCategoryThumbnail(cat.id, newUrl)
+                categoryToEditThumbnail = null
+            }
+        )
+    }
+
+    // Dialog: Change Subcategory Folder Thumbnail
+    subCategoryToEditThumbnail?.let { sub ->
+        ChangeThumbnailDialog(
+            title = "Change Thumbnail: ${sub.name}",
+            initialUrl = sub.thumbnailUrl,
+            onDismiss = { subCategoryToEditThumbnail = null },
+            onSave = { newUrl ->
+                viewModel.updateSubCategoryThumbnail(sub.id, newUrl)
+                subCategoryToEditThumbnail = null
+            }
+        )
+    }
+
+    // Dialog: Edit Photo Sort Order / Position
+    photoToEditSortOrder?.let { photo ->
+        EditSortOrderDialog(
+            photoCode = photo.photoCode,
+            currentSortOrder = photo.sortOrder,
+            onDismiss = { photoToEditSortOrder = null },
+            onSave = { newOrder ->
+                viewModel.updatePhotoSortOrder(photo.id, newOrder)
+                photoToEditSortOrder = null
+            }
+        )
+    }
+
+    // Dialog: Confirm Delete Category
+    categoryToDelete?.let { cat ->
+        ConfirmDeleteDialog(
+            title = "Delete Category: ${cat.displayName}?",
+            message = "Are you sure you want to delete this category? Make sure all its subcategory folders are moved or removed first.",
+            onDismiss = { categoryToDelete = null },
+            onConfirm = {
+                viewModel.deleteCategory(cat.id)
+                categoryToDelete = null
+            }
+        )
+    }
+
+    // Dialog: Confirm Delete Subcategory Folder
+    subCategoryToDelete?.let { sub ->
+        ConfirmDeleteDialog(
+            title = "Delete Folder: ${sub.name}?",
+            message = "Are you sure you want to delete this subcategory folder? Any photos associated with it will remain in the catalog.",
+            onDismiss = { subCategoryToDelete = null },
+            onConfirm = {
+                viewModel.deleteSubCategoryFolder(sub.id)
+                subCategoryToDelete = null
+            }
+        )
+    }
+
+    // Dialog: Web Dashboard Domain & Link
+    if (showWebDashboardDialog) {
+        WebDashboardInfoDialog(
+            onDismiss = { showWebDashboardDialog = false }
         )
     }
 }
@@ -390,7 +529,8 @@ private fun AdminPhotosStockTab(
     subCategories: List<SubCategory>,
     onToggleStock: (CatalogPhoto, Char, Boolean) -> Unit,
     onDeletePhoto: (Long) -> Unit,
-    onOpenAddPhoto: () -> Unit
+    onOpenAddPhoto: () -> Unit,
+    onEditSortOrder: (CatalogPhoto) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -446,20 +586,42 @@ private fun AdminPhotosStockTab(
                         Column(modifier = Modifier.weight(1f)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = "#${photo.photoCode} • ${photo.subCategoryName}",
                                         color = Color.White,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    Text(
-                                        text = photo.description.ifBlank { "Category: ${photo.categoryId}" },
-                                        color = Color(0xFF94A3B8),
-                                        fontSize = 11.sp
-                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    // Custom position number badge (clickable to change)
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Color(0xFF1E293B))
+                                            .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                                            .clickable { onEditSortOrder(photo) }
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "Seq #${photo.sortOrder}",
+                                                color = Color(0xFFFDE68A),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = "Edit Sequence",
+                                                tint = Color(0xFFFDE68A),
+                                                modifier = Modifier.size(10.dp)
+                                            )
+                                        }
+                                    }
                                 }
 
                                 IconButton(onClick = { onDeletePhoto(photo.id) }) {
@@ -467,10 +629,15 @@ private fun AdminPhotosStockTab(
                                 }
                             }
 
+                            Text(
+                                text = photo.description.ifBlank { "Category: ${photo.categoryId}" },
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+
                             Spacer(modifier = Modifier.height(8.dp))
 
                             // ABCD Individual Stock Switches as requested:
-                            // "ek hi image me se agar hum chahe to AB ke order band kar sake aur CD ke order saru hi ho"
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -526,65 +693,330 @@ private fun AbcdStockToggle(
     }
 }
 
-// ----------------- TAB 3: Folders Tab -----------------
+// ----------------- TAB 3: Categories & Folders Tab -----------------
 @Composable
-private fun AdminFoldersTab(
+private fun AdminCategoriesAndFoldersTab(
+    categories: List<CategoryItem>,
     subCategories: List<SubCategory>,
+    allPhotos: List<CatalogPhoto>,
+    onAddCategory: () -> Unit,
+    onEditCategoryThumbnail: (CategoryItem) -> Unit,
+    onDeleteCategory: (CategoryItem) -> Unit,
     onAddFolder: () -> Unit,
+    onEditSubCategoryThumbnail: (SubCategory) -> Unit,
     onDeleteFolder: (Long) -> Unit
 ) {
+    var selectedSection by remember { mutableIntStateOf(0) }
+    // 0: Main Categories, 1: Subcategory Folders
+    var selectedCategoryFilter by remember { mutableStateOf<String?>("ALL") }
+
     Column(modifier = Modifier.fillMaxSize()) {
+        // Section Toggle Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "DYNAMIC SUBCATEGORY FOLDERS",
-                color = Color(0xFFF59E0B),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp
-            )
-
-            Button(
-                onClick = onAddFolder,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
-                modifier = Modifier.testTag("btn_admin_add_folder")
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0F172A))
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Icon(Icons.Default.CreateNewFolder, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("+ New Folder", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (selectedSection == 0) Color(0xFFF59E0B) else Color.Transparent)
+                        .clickable { selectedSection = 0 }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "1. Categories (${categories.size})",
+                        color = if (selectedSection == 0) Color.Black else Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (selectedSection == 1) Color(0xFFF59E0B) else Color.Transparent)
+                        .clickable { selectedSection = 1 }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "2. Subcategory Folders (${subCategories.size})",
+                        color = if (selectedSection == 1) Color.Black else Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            if (selectedSection == 0) {
+                Button(
+                    onClick = onAddCategory,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                    modifier = Modifier.testTag("btn_admin_add_category")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("+ Add Category", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            } else {
+                Button(
+                    onClick = onAddFolder,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                    modifier = Modifier.testTag("btn_admin_add_folder")
+                ) {
+                    Icon(Icons.Default.CreateNewFolder, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("+ New Folder", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(subCategories) { sub ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B))
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+        if (selectedSection == 0) {
+            // Categories List
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(categories) { cat ->
+                    val foldersCount = subCategories.count { it.categoryId == cat.id }
+                    val photosCount = allPhotos.count { it.categoryId == cat.id }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B))
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Folder, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(24.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Category Thumbnail Box
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF1E293B))
+                                    .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (cat.thumbnailUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(cat.thumbnailUrl)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = cat.displayName,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Category,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+
                             Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(text = sub.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text(text = "Category: ${sub.categoryId.replace('_', ' ').uppercase()}", color = Color(0xFF94A3B8), fontSize = 11.sp)
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = cat.displayName,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                    if (cat.hindiName.isNotBlank()) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "• ${cat.hindiName}",
+                                            color = Color(0xFFFDE68A),
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "ID: ${cat.id} • $foldersCount Folders • $photosCount Photos",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 11.sp
+                                )
+                            }
+
+                            // Actions
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onEditCategoryThumbnail(cat) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Image,
+                                        contentDescription = "Change Thumbnail",
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                IconButton(onClick = { onDeleteCategory(cat) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete",
+                                        tint = Color(0xFFEF4444),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
+                    }
+                }
+            }
+        } else {
+            // Subcategory Folders List with Category Filter Pills
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                item {
+                    val isAll = selectedCategoryFilter == "ALL"
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isAll) Color(0xFFF59E0B) else Color(0xFF1E293B))
+                            .clickable { selectedCategoryFilter = "ALL" }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text("ALL", color = if (isAll) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+                items(categories) { cat ->
+                    val isSel = selectedCategoryFilter == cat.id
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isSel) Color(0xFFF59E0B) else Color(0xFF1E293B))
+                            .clickable { selectedCategoryFilter = cat.id }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = cat.displayName,
+                            color = if (isSel) Color.Black else Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
 
-                        IconButton(onClick = { onDeleteFolder(sub.id) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val filteredFolders = if (selectedCategoryFilter == "ALL" || selectedCategoryFilter == null) {
+                subCategories
+            } else {
+                subCategories.filter { it.categoryId == selectedCategoryFilter }
+            }
+
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(filteredFolders) { sub ->
+                    val photosCount = allPhotos.count { it.subCategoryId == sub.id }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Subcategory Thumbnail Box
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF1E293B))
+                                    .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (sub.thumbnailUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(sub.thumbnailUrl)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = sub.name,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Folder,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = sub.name,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    if (sub.sortOrder > 0) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .background(Color(0xFF1E293B), RoundedCornerShape(4.dp))
+                                                .border(1.dp, Color(0xFF334155), RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                                        ) {
+                                            Text(
+                                                text = "Seq #${sub.sortOrder}",
+                                                color = Color(0xFFFDE68A),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = "Category: ${sub.categoryId.replace('_', ' ').uppercase()} • $photosCount Designs",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 11.sp
+                                )
+                            }
+
+                            // Actions
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onEditSubCategoryThumbnail(sub) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Image,
+                                        contentDescription = "Change Thumbnail",
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                IconButton(onClick = { onDeleteFolder(sub.id) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete",
+                                        tint = Color(0xFFEF4444),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -670,134 +1102,220 @@ private fun AdminCustomersTab(
 // ----------------- DIALOGS -----------------
 @Composable
 private fun AddPhotoDialog(
+    categories: List<CategoryItem>,
     subCategories: List<SubCategory>,
     onDismiss: () -> Unit,
-    onAdd: (categoryId: String, subId: Long, subName: String, code: String, uri: String, items: Int, desc: String) -> Unit
+    onAdd: (categoryId: String, subId: Long, subName: String, code: String, uri: String, items: Int, desc: String, sortOrder: Int) -> Unit
 ) {
-    var selectedSub by remember { mutableStateOf(subCategories.firstOrNull()) }
+    var selectedCategoryId by remember {
+        mutableStateOf(categories.firstOrNull()?.id ?: MainCategory.COSMETICS.id)
+    }
+
+    val availableFoldersForCategory = remember(selectedCategoryId, subCategories) {
+        subCategories.filter { it.categoryId == selectedCategoryId }
+    }
+
+    var selectedSub by remember(selectedCategoryId) {
+        mutableStateOf(availableFoldersForCategory.firstOrNull())
+    }
+
     var photoCode by remember { mutableStateOf("") }
     var imageUri by remember { mutableStateOf("") }
+    var sortOrderText by remember { mutableStateOf("10") }
     var itemCount by remember { mutableIntStateOf(4) }
     var description by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF0F172A),
-        title = { Text("Add / Upload New Catalog Photo", color = Color.White, fontWeight = FontWeight.Bold) },
+        title = { Text("Upload & Categorize Product Photo", color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
-            Column {
-                Text("Select Subcategory Folder:", color = Color(0xFF94A3B8), fontSize = 12.sp)
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Folder selector chips
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    subCategories.take(4).forEach { sub ->
-                        val isSelected = selectedSub?.id == sub.id
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (isSelected) Color(0xFFF59E0B) else Color(0xFF1E293B))
-                                .clickable { selectedSub = sub }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = sub.name.take(12),
-                                color = if (isSelected) Color.Black else Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 1. Choose Category
+                item {
+                    Text("1. Choose Category:", color = Color(0xFFF59E0B), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(categories) { cat ->
+                            val isSel = selectedCategoryId == cat.id
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isSel) Color(0xFFF59E0B) else Color(0xFF1E293B))
+                                    .clickable {
+                                        selectedCategoryId = cat.id
+                                        selectedSub = subCategories.firstOrNull { it.categoryId == cat.id }
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = cat.displayName,
+                                    color = if (isSel) Color.Black else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = photoCode,
-                    onValueChange = { photoCode = it },
-                    label = { Text("Photo Code (e.g. ER-205, LP-108)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFFF59E0B),
-                        unfocusedBorderColor = Color(0xFF334155)
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = imageUri,
-                    onValueChange = { imageUri = it },
-                    label = { Text("Image URL or leave empty for studio sample") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFFF59E0B),
-                        unfocusedBorderColor = Color(0xFF334155)
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text("Products in this Photo (ABCD):", color = Color(0xFF94A3B8), fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(2, 3, 4).forEach { count ->
-                        val isSel = itemCount == count
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (isSel) Color(0xFFF59E0B) else Color(0xFF1E293B))
-                                .clickable { itemCount = count }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                // 2. Choose Subcategory Folder
+                item {
+                    Text("2. Choose Subcategory Folder:", color = Color(0xFFF59E0B), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    if (availableFoldersForCategory.isEmpty()) {
+                        Text(
+                            "No folders in this category yet. Please add a folder first.",
+                            color = Color(0xFFEF4444),
+                            fontSize = 11.sp
+                        )
+                    } else {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = "$count Products (${"ABCD".take(count)})",
-                                color = if (isSel) Color.Black else Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
-                            )
+                            items(availableFoldersForCategory) { sub ->
+                                val isSelected = selectedSub?.id == sub.id
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isSelected) Color(0xFFF59E0B) else Color(0xFF1E293B))
+                                        .clickable { selectedSub = sub }
+                                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        text = sub.name,
+                                        color = if (isSelected) Color.Black else Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                // 3. Photo Code & Position Number
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = photoCode,
+                            onValueChange = { photoCode = it },
+                            label = { Text("Photo # (e.g. NP-10)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1.2f),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFFF59E0B),
+                                unfocusedBorderColor = Color(0xFF334155)
+                            )
+                        )
 
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description / Box specs") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFFF59E0B),
-                        unfocusedBorderColor = Color(0xFF334155)
+                        OutlinedTextField(
+                            value = sortOrderText,
+                            onValueChange = { sortOrderText = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("Position # (e.g. 10, 11)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFFF59E0B),
+                                unfocusedBorderColor = Color(0xFF334155)
+                            )
+                        )
+                    }
+                    Text(
+                        "Consecutive numbers (e.g. 10, 11) will place similar products side-by-side in the folder.",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.sp
                     )
-                )
+                }
+
+                // 4. Image URL
+                item {
+                    OutlinedTextField(
+                        value = imageUri,
+                        onValueChange = { imageUri = it },
+                        label = { Text("Image URL (or leave blank for studio sample)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFFF59E0B),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        )
+                    )
+                }
+
+                // 5. Items count ABCD
+                item {
+                    Text("Products in this Photo (ABCD):", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(2, 3, 4).forEach { count ->
+                            val isSel = itemCount == count
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isSel) Color(0xFFF59E0B) else Color(0xFF1E293B))
+                                    .clickable { itemCount = count }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = "$count Products (${"ABCD".take(count)})",
+                                    color = if (isSel) Color.Black else Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 6. Description
+                item {
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description / Box specs") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFFF59E0B),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        )
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val sub = selectedSub ?: subCategories.firstOrNull()
+                    val sub = selectedSub ?: availableFoldersForCategory.firstOrNull()
                     if (photoCode.isNotBlank() && sub != null) {
+                        val orderNum = sortOrderText.toIntOrNull() ?: 10
                         onAdd(
-                            sub.categoryId,
+                            selectedCategoryId,
                             sub.id,
                             sub.name,
                             photoCode.trim().uppercase(),
                             imageUri.trim(),
                             itemCount,
-                            description.trim()
+                            description.trim(),
+                            orderNum
                         )
                     }
                 },
@@ -910,11 +1428,14 @@ private fun AddCustomerDialog(
 
 @Composable
 private fun AddFolderDialog(
+    categories: List<CategoryItem>,
     onDismiss: () -> Unit,
-    onSave: (categoryId: String, folderName: String) -> Unit
+    onSave: (categoryId: String, folderName: String, thumbUrl: String, sortOrder: Int) -> Unit
 ) {
-    var categoryId by remember { mutableStateOf(MainCategory.IMITATION.id) }
+    var categoryId by remember { mutableStateOf(categories.firstOrNull()?.id ?: MainCategory.IMITATION.id) }
     var folderName by remember { mutableStateOf("") }
+    var thumbnailUrl by remember { mutableStateOf("") }
+    var sortOrderText by remember { mutableStateOf("10") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -924,8 +1445,11 @@ private fun AddFolderDialog(
             Column {
                 Text("Choose Category:", color = Color(0xFF94A3B8), fontSize = 12.sp)
                 Spacer(modifier = Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MainCategory.entries.forEach { cat ->
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(categories) { cat ->
                         val isSel = categoryId == cat.id
                         Box(
                             modifier = Modifier
@@ -947,7 +1471,36 @@ private fun AddFolderDialog(
                 OutlinedTextField(
                     value = folderName,
                     onValueChange = { folderName = it },
-                    label = { Text("Folder Name (e.g. Mangalsutra, Lip Balm)") },
+                    label = { Text("Folder Name (e.g. Mangalsutra, Nail Paint)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFF59E0B),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = thumbnailUrl,
+                    onValueChange = { thumbnailUrl = it },
+                    label = { Text("Folder Thumbnail Image URL (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFF59E0B),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = sortOrderText,
+                    onValueChange = { sortOrderText = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Sort Order / Position (e.g. 10, 20)") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
@@ -962,7 +1515,8 @@ private fun AddFolderDialog(
             Button(
                 onClick = {
                     if (folderName.isNotBlank()) {
-                        onSave(categoryId, folderName.trim())
+                        val num = sortOrderText.toIntOrNull() ?: 10
+                        onSave(categoryId, folderName.trim(), thumbnailUrl.trim(), num)
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
@@ -972,6 +1526,336 @@ private fun AddFolderDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel", color = Color(0xFF94A3B8)) }
+        }
+    )
+}
+
+@Composable
+private fun AddCategoryDialog(
+    onDismiss: () -> Unit,
+    onSave: (id: String, name: String, hindiName: String, thumbUrl: String, colorHex: String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var hindiName by remember { mutableStateOf("") }
+    var thumbUrl by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0F172A),
+        title = { Text("Create New Wholesale Category", color = Color.White, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Category Name (e.g. Bangles & Kadas)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFF59E0B),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    )
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = hindiName,
+                    onValueChange = { hindiName = it },
+                    label = { Text("Hindi Name (e.g. चूड़ियां और कंगन)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFF59E0B),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    )
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = thumbUrl,
+                    onValueChange = { thumbUrl = it },
+                    label = { Text("Category Thumbnail URL (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFF59E0B),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        val id = name.trim().lowercase().replace(' ', '_').filter { it.isLetterOrDigit() || it == '_' }
+                        onSave(id, name.trim(), hindiName.trim(), thumbUrl.trim(), "#F59E0B")
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+            ) {
+                Text("Create Category", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = Color(0xFF94A3B8)) }
+        }
+    )
+}
+
+@Composable
+private fun ChangeThumbnailDialog(
+    title: String,
+    initialUrl: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var url by remember { mutableStateOf(initialUrl) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0F172A),
+        title = { Text(title, color = Color.White, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text("Enter image URL for this thumbnail or sample link:", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("Thumbnail Image URL") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFF59E0B),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    )
+                )
+
+                if (url.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("Preview:", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF1E293B))
+                            .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(url)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Preview",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(url.trim()) },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+            ) {
+                Text("Save Thumbnail", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color(0xFF94A3B8))
+            }
+        }
+    )
+}
+
+@Composable
+private fun EditSortOrderDialog(
+    photoCode: String,
+    currentSortOrder: Int,
+    onDismiss: () -> Unit,
+    onSave: (Int) -> Unit
+) {
+    var sortText by remember { mutableStateOf(currentSortOrder.toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0F172A),
+        title = { Text("Set Position # for Photo #$photoCode", color = Color.White, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text(
+                    "Set product order number. Products with consecutive numbers (e.g. 10 and 11) will appear side-by-side in the folder.",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = sortText,
+                    onValueChange = { sortText = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Position / Sequence Number (e.g. 10, 11)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFF59E0B),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val num = sortText.toIntOrNull() ?: 10
+                    onSave(num)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+            ) {
+                Text("Update Position", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color(0xFF94A3B8))
+            }
+        }
+    )
+}
+
+@Composable
+private fun ConfirmDeleteDialog(
+    title: String,
+    message: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0F172A),
+        title = { Text(title, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold) },
+        text = { Text(message, color = Color.White, fontSize = 13.sp) },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+            ) {
+                Text("Delete", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color(0xFF94A3B8))
+            }
+        }
+    )
+}
+
+@Composable
+private fun WebDashboardInfoDialog(
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val hostingUrl = "https://shivam-2bace.web.app"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0F172A),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Language,
+                    contentDescription = null,
+                    tint = Color(0xFF38BDF8),
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("Web Admin Portal & Free Domain", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp)
+            }
+        },
+        text = {
+            Column(modifier = Modifier.padding(top = 4.dp)) {
+                Text(
+                    text = "Aapka cloud web dashboard ready hai! Aap is free Firebase domain se kisi bhi laptop, PC ya mobile browser par login karke full management kar sakte hain:",
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 12.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF1E293B))
+                        .padding(12.dp)
+                ) {
+                    Column {
+                        Text(
+                            text = "OFFICIAL FREE DOMAIN LINK:",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = hostingUrl,
+                            color = Color(0xFF38BDF8),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Text(
+                            text = "Alternative: https://shivam-2bace.firebaseapp.com",
+                            color = Color(0xFF64748B),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Features in Web Dashboard:",
+                    color = Color(0xFFF59E0B),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
+                Text(
+                    text = "• Create Customer IDs with WhatsApp share link\n• Upload photos (File upload & web URLs)\n• Department packing Done/Pending (Imitation, Cosmetics, Hair)\n• Print wholesale packing & dispatch slips",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 11.sp
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(hostingUrl))
+                    Toast.makeText(context, "Web Link Copied to Clipboard!", Toast.LENGTH_SHORT).show()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8))
+            ) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Copy Domain Link", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = Color(0xFF94A3B8))
+            }
         }
     )
 }

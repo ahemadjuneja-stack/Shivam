@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -66,6 +68,7 @@ fun PhotoViewer16x9(
     initialIndex: Int,
     cartItems: List<OrderCartItem>,
     onOptionSelected: (photo: CatalogPhoto, optionLetter: String, quantity: Int) -> Unit,
+    onOptionDecreased: (photo: CatalogPhoto, optionLetter: String, quantity: Int) -> Unit = { _, _, _ -> },
     onIndexChanged: (Int) -> Unit = {},
     onBack: () -> Unit,
     onOpenCart: () -> Unit,
@@ -263,8 +266,12 @@ fun PhotoViewer16x9(
                         lastAddedQty = addQty
                         onOptionSelected(currentPhoto, letter, addQty)
                     },
+                    onDecrease = { letter ->
+                        val subQty = currentPhoto.defaultQuantity.coerceAtLeast(1)
+                        onOptionDecreased(currentPhoto, letter, subQty)
+                    },
                     modifier = Modifier
-                        .width(96.dp)
+                        .width(108.dp)
                         .fillMaxHeight()
                 )
             }
@@ -303,12 +310,14 @@ fun PhotoViewer16x9(
 
 /**
  * Vertical ABCD Column ("khadi sidhi line me honi chahiye aur photo bada dikhna chahiye uske side me abcd ho")
+ * Now with interactive + and - controls right on the button!
  */
 @Composable
 private fun VerticalAbcdStrip(
     photo: CatalogPhoto,
     cartQuantities: Map<String, Int>,
     onSelect: (String) -> Unit,
+    onDecrease: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val items = listOf("A", "B", "C", "D").take(photo.itemCount.coerceIn(2, 4))
@@ -322,7 +331,7 @@ private fun VerticalAbcdStrip(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp),
+                .padding(6.dp),
             verticalArrangement = Arrangement.SpaceEvenly,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -335,11 +344,12 @@ private fun VerticalAbcdStrip(
                     isAvailable = isAvailable,
                     quantityInCart = inCart,
                     defaultQuantity = photo.defaultQuantity,
-                    onClick = { if (isAvailable) onSelect(letter) },
+                    onIncrease = { if (isAvailable) onSelect(letter) },
+                    onDecrease = { if (isAvailable) onDecrease(letter) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .padding(vertical = 4.dp)
+                        .padding(vertical = 3.dp)
                 )
             }
         }
@@ -352,10 +362,12 @@ private fun AbcdButton(
     isAvailable: Boolean,
     quantityInCart: Int,
     defaultQuantity: Int,
-    onClick: () -> Unit,
+    onIncrease: () -> Unit,
+    onDecrease: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val activeBorder = if (quantityInCart > 0) Color(0xFFF59E0B) else Color(0xFF27417D)
+    val inCart = quantityInCart > 0
+    val activeBorder = if (inCart) Color(0xFFF59E0B) else Color(0xFF27417D)
 
     Box(
         modifier = modifier
@@ -363,28 +375,33 @@ private fun AbcdButton(
             .background(
                 when {
                     !isAvailable -> Color(0xFF1E293B)
-                    quantityInCart > 0 -> Color(0xFF1E3364)
+                    inCart -> Color(0xFF1E3364)
                     else -> Color(0xFF17284F)
                 }
             )
             .border(
-                width = if (quantityInCart > 0) 2.dp else 1.dp,
+                width = if (inCart) 2.dp else 1.dp,
                 color = if (!isAvailable) Color(0xFF334155) else activeBorder,
                 shape = RoundedCornerShape(10.dp)
             )
-            .clickable(enabled = isAvailable, onClick = onClick)
-            .padding(4.dp)
+            .then(
+                if (isAvailable && !inCart) {
+                    Modifier.clickable(onClick = onIncrease)
+                } else Modifier
+            )
+            .padding(horizontal = 4.dp, vertical = 2.dp)
             .testTag("btn_abcd_$letter"),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
         ) {
             Text(
                 text = letter,
                 color = if (isAvailable) Color.White else Color(0xFF64748B),
-                fontSize = 24.sp,
+                fontSize = if (inCart) 20.sp else 22.sp,
                 fontWeight = FontWeight.Black
             )
 
@@ -395,19 +412,79 @@ private fun AbcdButton(
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold
                 )
-            } else if (quantityInCart > 0) {
-                Text(
-                    text = "$quantityInCart pcs",
-                    color = Color(0xFFF59E0B),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            } else if (inCart) {
+                // Interactive + and - dual controls directly in the button!
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // MINUS BUTTON
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFEF4444).copy(alpha = 0.25f))
+                            .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.7f), CircleShape)
+                            .clickable(onClick = onDecrease)
+                            .testTag("btn_minus_$letter"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Remove,
+                            contentDescription = "Minus $letter",
+                            tint = Color(0xFFFCA5A5),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    // Quantity display
+                    Text(
+                        text = "$quantityInCart",
+                        color = Color(0xFFF59E0B),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Black
+                    )
+
+                    // PLUS BUTTON
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF10B981).copy(alpha = 0.25f))
+                            .border(1.dp, Color(0xFF10B981).copy(alpha = 0.7f), CircleShape)
+                            .clickable(onClick = onIncrease)
+                            .testTag("btn_plus_$letter"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Plus $letter",
+                            tint = Color(0xFF6EE7B7),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             } else {
-                Text(
-                    text = "+$defaultQuantity pcs",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 9.sp
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        text = "+$defaultQuantity pcs",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 9.sp
+                    )
+                }
             }
         }
     }

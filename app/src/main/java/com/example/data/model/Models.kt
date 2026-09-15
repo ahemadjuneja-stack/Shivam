@@ -20,17 +20,34 @@ enum class MainCategory(val id: String, val displayName: String, val hindiName: 
 }
 
 /**
- * Subcategories (folders) inside each main category (e.g. Earrings, Necklace, Bangles, etc.).
- * New folders can be dynamically created by shop admin.
+ * Dynamic Categories customizable via Dashboard (Add / Delete / Change Thumbnail).
+ */
+@Entity(tableName = "app_categories")
+data class CategoryItem(
+    @PrimaryKey
+    val id: String,
+    val displayName: String,
+    val hindiName: String = "",
+    val thumbnailUrl: String = "",
+    val accentColorHex: String = "#F59E0B",
+    val sortOrder: Int = 0,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * Subcategories (folders) inside each category.
+ * Has customizable thumbnail, photo count, and display order.
  */
 @Entity(tableName = "subcategories")
 data class SubCategory(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    val categoryId: String, // MainCategory.id
+    val categoryId: String, // CategoryItem.id or MainCategory.id
     val name: String,
     val iconName: String = "folder",
+    val thumbnailUrl: String = "",
     val photoCount: Int = 0,
+    val sortOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -38,6 +55,7 @@ data class SubCategory(
  * Catalog Photo containing 2, 3, or 4 products labeled A, B, C, D.
  * Price is embedded inside the photo (wholesale standard).
  * Stock availability can be individually toggled for A, B, C, D.
+ * sortOrder: Sequence number (e.g. 10, 11) to arrange similar products side-by-side!
  */
 @Entity(tableName = "catalog_photos")
 data class CatalogPhoto(
@@ -53,7 +71,8 @@ data class CatalogPhoto(
     val bAvailable: Boolean = true,
     val cAvailable: Boolean = true,
     val dAvailable: Boolean = true,
-    val defaultQuantity: Int = 1, // Customizable unit/pack quantity (can be 1, 6, 12, etc.)
+    val defaultQuantity: Int = 1, // Customizable unit/pack quantity
+    val sortOrder: Int = 10, // Display Sequence / sort order (e.g. 10, 11)
     val description: String = "",
     val createdAt: Long = System.currentTimeMillis()
 ) {
