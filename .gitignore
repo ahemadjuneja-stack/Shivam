@@ -8,11 +8,8 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+node_modules
+dist
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
 .env
-debug.keystore
+

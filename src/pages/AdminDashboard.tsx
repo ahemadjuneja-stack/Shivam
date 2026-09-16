@@ -9,6 +9,7 @@ export function AdminDashboard() {
   const customers = useAppStore(state => state.customers);
   const addCustomer = useAppStore(state => state.addCustomer);
   const updateOrderStatus = useAppStore(state => state.updateOrderStatus);
+  const resetToDefaults = useAppStore(state => state.resetToDefaults);
 
   const [newCust, setNewCust] = useState({
     customerCode: `CUST-${Math.floor(Math.random() * 9000) + 1000}`,
@@ -41,18 +42,32 @@ export function AdminDashboard() {
 
   return (
     <div>
-      <div className="flex gap-2 border-b border-slate-700 pb-4 mb-6">
-        <button 
-          onClick={() => setActiveTab('orders')}
-          className={`px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition ${activeTab === 'orders' ? 'bg-brand-gold text-black shadow-lg shadow-amber-500/20' : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'}`}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 pb-4 mb-6">
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setActiveTab('orders')}
+            className={`px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition ${activeTab === 'orders' ? 'bg-brand-gold text-black shadow-lg shadow-amber-500/20' : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'}`}
+          >
+            <Package size={16} /> Live Orders & Packing
+          </button>
+          <button 
+            onClick={() => setActiveTab('customers')}
+            className={`px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition ${activeTab === 'customers' ? 'bg-brand-gold text-black shadow-lg shadow-amber-500/20' : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'}`}
+          >
+            <UserPlus size={16} /> Customers
+          </button>
+        </div>
+
+        <button
+          onClick={() => {
+            if (confirm('Reset catalog and showroom to default clean data?')) {
+              resetToDefaults();
+              alert('Showroom data restored successfully!');
+            }
+          }}
+          className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-bold transition"
         >
-          <Package size={16} /> Live Orders & Packing
-        </button>
-        <button 
-          onClick={() => setActiveTab('customers')}
-          className={`px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition ${activeTab === 'customers' ? 'bg-brand-gold text-black shadow-lg shadow-amber-500/20' : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'}`}
-        >
-          <UserPlus size={16} /> Customers
+          Reset Showroom Defaults
         </button>
       </div>
 

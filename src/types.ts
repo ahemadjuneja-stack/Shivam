@@ -7,7 +7,6 @@ export enum MainCategory {
 export interface CategoryItem {
   id: string;
   displayName: string;
-  hindiName: string;
   thumbnailUrl: string;
   accentColorHex: string;
   sortOrder: number;
@@ -30,6 +29,7 @@ export interface CatalogPhoto {
   subCategoryName: string;
   photoCode: string;
   imageUri: string;
+  videoUri?: string; // Optional showcase video
   itemCount: number; // 2, 3, or 4
   aAvailable: boolean;
   bAvailable: boolean;
