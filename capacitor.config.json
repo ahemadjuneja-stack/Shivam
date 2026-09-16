@@ -3,3 +3,21 @@
   "appName": "SHIVAM Wholesale",
   "webDir": "dist"
 }
+{
+  "appId": "com.shivam.wholesale",
+  "appName": "SHIVAM Wholesale",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "DARK",
+      "backgroundColor": "#0b0f19"
+    }
+  }
+}
