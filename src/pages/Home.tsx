@@ -8,7 +8,8 @@ import {
   Volume2, 
   VolumeX, 
   ArrowLeft, 
-  Check
+  Check,
+  ShoppingBag
 } from 'lucide-react';
 import { CatalogPhoto } from '../types';
 
@@ -18,6 +19,7 @@ export function Home() {
   const photos = useAppStore(state => state.photos);
   const cart = useAppStore(state => state.cart);
   const setItemQuantity = useAppStore(state => state.setItemQuantity);
+  const setIsCartOpen = useAppStore(state => state.setIsCartOpen);
 
   const activeCategoryId = useAppStore(state => state.activeCategoryId);
   const activeSubCategoryId = useAppStore(state => state.activeSubCategoryId);
@@ -34,12 +36,63 @@ export function Home() {
   const categorySubList = subCategories.filter(s => s.categoryId === activeCategoryId);
   const galleryPhotos = photos.filter(p => p.subCategoryId === activeSubCategoryId);
   const activePhotoIndex = selectedPhoto ? galleryPhotos.findIndex(p => p.id === selectedPhoto.id) : 0;
+  const totalCartPieces = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   // Video slide reel (all photos with videos in 16:9 HDTV)
   const videoList = photos.filter(p => !!p.videoUri);
   const [videoSlideIdx, setVideoSlideIdx] = useState(0);
   const [isVideoMuted, setIsVideoMuted] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Touch & Swipe gesture handling for full image
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
+  const isMouseDown = useRef(false);
+  const mouseStartX = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchEndX.current = null;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartX.current !== null && touchEndX.current !== null) {
+      const diffX = touchStartX.current - touchEndX.current;
+      if (diffX > 35) {
+        handleNextPhoto(); // swiped left -> next photo
+      } else if (diffX < -35) {
+        handlePrevPhoto(); // swiped right -> prev photo
+      }
+    }
+    touchStartX.current = null;
+    touchEndX.current = null;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isMouseDown.current = true;
+    mouseStartX.current = e.clientX;
+  };
+
+  const handleMouseMove = () => {
+    // keeping drag state active
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (isMouseDown.current && mouseStartX.current !== null) {
+      const diffX = mouseStartX.current - e.clientX;
+      if (diffX > 40) {
+        handleNextPhoto();
+      } else if (diffX < -40) {
+        handlePrevPhoto();
+      }
+    }
+    isMouseDown.current = false;
+    mouseStartX.current = null;
+  };
 
   // Feedback notification
   const [qtyFeedback, setQtyFeedback] = useState<string | null>(null);
@@ -144,8 +197,8 @@ export function Home() {
     return (
       <div className="w-full h-full flex flex-row gap-3 overflow-hidden select-none items-center">
         
-        {/* LEFT 50%: HDTV 16:9 VIDEO SLIDE ONLY */}
-        <div className="w-1/2 h-full flex items-center justify-center bg-black/40 rounded-2xl border border-slate-800/80 p-2 overflow-hidden shadow-2xl">
+        {/* LEFT: HDTV 16:9 VIDEO SLIDE (EXPANDED TO ~64% WIDTH) */}
+        <div className="w-[64%] h-full flex items-center justify-center bg-black/40 rounded-2xl border border-slate-800/80 p-2 overflow-hidden shadow-2xl">
           <div className="w-full aspect-video max-h-full rounded-xl overflow-hidden bg-black relative border border-slate-800 shadow-xl flex items-center justify-center group">
             {activeVideoPhoto?.videoUri ? (
               <>
@@ -207,8 +260,8 @@ export function Home() {
           </div>
         </div>
 
-        {/* RIGHT 50%: SIRF CATEGORY THUMBNAIL IMAGES (3 MAIN CATEGORIES IN 16:9) */}
-        <div className="w-1/2 h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-3 overflow-y-auto scrollbar-thin shadow-2xl flex flex-col justify-center gap-3">
+        {/* RIGHT: COMPACT CATEGORY THUMBNAIL IMAGES (~36% WIDTH) */}
+        <div className="w-[36%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-3 overflow-y-auto scrollbar-thin shadow-2xl flex flex-col justify-center gap-3">
           {categories.map(cat => {
             const count = subCategories.filter(s => s.categoryId === cat.id).length;
 
@@ -357,17 +410,12 @@ export function Home() {
                   onClick={() => handleOpenFullImage(photo)}
                   className="group relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-brand-gold cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 shadow-lg flex items-center justify-center"
                 >
-                  {/* Clean 16:9 Photo without any ABCD overlay */}
+                  {/* Clean 16:9 Photo without any ABCD overlay or item number */}
                   <img
                     src={photo.imageUri}
                     alt={photo.photoCode}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
-
-                  {/* Subtle Photo Code Badge */}
-                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur-md text-[10px] font-mono font-bold text-white border border-white/10">
-                    {photo.photoCode}
-                  </div>
 
                   {/* Ordered Badge if already in cart */}
                   {totalPiecesOrdered > 0 && (
@@ -387,150 +435,138 @@ export function Home() {
   }
 
   /* -----------------------------------------------------------------------------------
-     VIEW 4: FULL IMAGE VIEW (16:9 Image on Left, Dedicated SIDE PANEL with ABCD on Right)
-     Product ke upar ABCD NAHI aayegi, ABCD dedicated Side Panel me rahegi!
+     VIEW 4: FULL IMAGE VIEW (Clean Maximized Image on Left, Dedicated SIDE PANEL on Right)
+     - Image par se arrows, dots, product number, aur gallery button hata diye gaye hain.
+     - Finger se slide / swipe karne par image change hoti hai.
+     - Gallery button, Product code, aur Cart icon ABCD ke panel me integrate hain.
      ----------------------------------------------------------------------------------- */
   const photo = selectedPhoto || galleryPhotos[0];
 
   return (
     <div className="w-full h-full flex flex-row gap-2 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden shadow-2xl p-1.5 select-none items-stretch">
       
-      {/* LEFT/CENTER: MAXIMIZED BIG PRODUCT IMAGE */}
-      <div className="flex-1 h-full rounded-xl bg-black border border-slate-800/80 overflow-hidden relative flex items-center justify-center">
-        
-        {/* Full-view Big Photo */}
-        <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
-          <img
-            key={photo?.imageUri}
-            src={photo?.imageUri}
-            alt={photo?.photoCode}
-            className="w-full h-full object-contain"
-          />
-
-          {/* Slide Navigation Left Arrow */}
-          {galleryPhotos.length > 1 && (
-            <button
-              onClick={handlePrevPhoto}
-              className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 hover:border-brand-gold transition-transform hover:scale-105 active:scale-95 z-10 shadow-2xl"
-              title="Previous"
-            >
-              <ChevronLeft size={20} />
-            </button>
-          )}
-
-          {/* Slide Navigation Right Arrow */}
-          {galleryPhotos.length > 1 && (
-            <button
-              onClick={handleNextPhoto}
-              className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 hover:border-brand-gold transition-transform hover:scale-105 active:scale-95 z-10 shadow-2xl"
-              title="Next"
-            >
-              <ChevronRight size={20} />
-            </button>
-          )}
-
-          {/* Slide Dots at bottom */}
-          {galleryPhotos.length > 1 && (
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/15 flex items-center gap-1.5 z-10">
-              {galleryPhotos.map((p, i) => (
-                <button
-                  key={p.id}
-                  onClick={() => setSelectedPhoto(p)}
-                  className={`h-1.5 rounded-full transition-all ${
-                    i === activePhotoIndex ? 'w-4 bg-brand-gold' : 'w-1.5 bg-white/40'
-                  }`}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Back Button to return to Gallery */}
-        <button
-          onClick={() => {
-            setScreenMode('gallery');
-            setShowroomScreenMode('gallery');
-          }}
-          className="absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/70 hover:bg-black text-white backdrop-blur-md border border-white/20 text-xs font-bold transition active:scale-95 z-20 shadow-lg"
-        >
-          <ArrowLeft size={14} className="text-brand-gold" />
-          <span>Gallery</span>
-        </button>
-
-        {/* Photo Code */}
-        <div className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/20 text-xs font-mono font-black text-brand-gold shadow-lg z-20">
-          {photo?.photoCode} • ({activePhotoIndex + 1}/{galleryPhotos.length})
-        </div>
+      {/* LEFT/CENTER: 100% CLEAN MAXIMIZED PRODUCT IMAGE WITH FINGER SLIDE SWIPE */}
+      <div 
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        className="flex-1 h-full rounded-xl bg-black border border-slate-800/80 overflow-hidden relative flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
+        title="Swipe left or right to change image"
+      >
+        <img
+          key={photo?.imageUri}
+          src={photo?.imageUri}
+          alt={photo?.photoCode}
+          draggable={false}
+          className="w-full h-full object-contain pointer-events-none"
+        />
 
         {/* Feedback Toast */}
         {qtyFeedback && (
-          <div className="absolute bottom-3 right-3 z-30 bg-emerald-500 text-black font-black text-xs px-2.5 py-1 rounded-lg shadow-xl flex items-center gap-1 backdrop-blur-md animate-fadeIn">
+          <div className="absolute bottom-3 right-3 z-30 bg-emerald-500 text-black font-black text-xs px-2.5 py-1 rounded-lg shadow-xl flex items-center gap-1 backdrop-blur-md animate-fadeIn pointer-events-none">
             <Check size={12} />
             <span>{qtyFeedback}</span>
           </div>
         )}
-
       </div>
 
-      {/* RIGHT: COMPACT SIDE PANEL FOR ABCD (Size sirf itni jisme ABCD aur +- dikhe) */}
+      {/* RIGHT: COMPACT SIDE PANEL FOR ABCD (With Gallery button, Product Code, ABCD, and Cart icon) */}
       {photo && (
-        <div className="w-[102px] sm:w-[108px] h-full rounded-xl bg-slate-900 border border-slate-800 p-1.5 flex flex-col justify-center gap-2 shadow-xl flex-shrink-0">
-          {['A', 'B', 'C', 'D'].slice(0, photo.itemCount).map(option => {
-            const isAvailable = photo[`${option.toLowerCase()}Available` as keyof typeof photo];
-            const currentQty = getOptionQty(photo.id, option, photo.defaultQuantity);
-            const badge = letterBadgeColors[option];
+        <div className="w-[114px] sm:w-[120px] h-full rounded-xl bg-slate-900 border border-slate-800 p-1.5 flex flex-col justify-between shadow-xl flex-shrink-0">
+          
+          {/* TOP: Gallery Back Button & Product Code */}
+          <div className="flex flex-col gap-1.5">
+            <button
+              onClick={() => {
+                setScreenMode('gallery');
+                setShowroomScreenMode('gallery');
+              }}
+              className="w-full flex items-center justify-center gap-1 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700/80 transition active:scale-95 shadow-sm"
+              title="Back to Gallery"
+            >
+              <ArrowLeft size={11} className="text-brand-gold" />
+              <span>Gallery</span>
+            </button>
 
-            if (!isAvailable) {
+            {/* Product Number in ABCD Side Panel */}
+            <div className="text-center py-0.5 px-1 rounded-md bg-black/60 border border-slate-800 font-mono font-black text-[10px] text-brand-gold truncate shadow-inner">
+              {photo?.photoCode}
+            </div>
+          </div>
+
+          {/* MIDDLE: ABCD Steppers */}
+          <div className="flex flex-col gap-1.5 py-1">
+            {['A', 'B', 'C', 'D'].slice(0, photo.itemCount).map(option => {
+              const isAvailable = photo[`${option.toLowerCase()}Available` as keyof typeof photo];
+              const currentQty = getOptionQty(photo.id, option, photo.defaultQuantity);
+              const badge = letterBadgeColors[option];
+
+              if (!isAvailable) {
+                return (
+                  <div 
+                    key={option} 
+                    className="flex items-center justify-between p-1 rounded-lg bg-slate-950/60 border border-slate-800/80 opacity-40"
+                  >
+                    <div className="w-5 h-5 rounded bg-slate-800 text-slate-500 font-black text-[10px] flex items-center justify-center">
+                      {option}
+                    </div>
+                    <span className="text-[9px] text-slate-500 font-mono px-1">OUT</span>
+                  </div>
+                );
+              }
+
               return (
-                <div 
-                  key={option} 
-                  className="flex items-center justify-between p-1 rounded-lg bg-slate-950/60 border border-slate-800/80 opacity-40"
+                <div
+                  key={option}
+                  className="flex items-center justify-between p-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-brand-gold/60 transition shadow-sm"
                 >
-                  <div className="w-6 h-6 rounded bg-slate-800 text-slate-500 font-black text-xs flex items-center justify-center">
+                  {/* Letter Badge */}
+                  <div 
+                    className={`w-5 h-5 rounded ${badge.bg} ${badge.text} font-black text-[10px] flex items-center justify-center shadow flex-shrink-0`}
+                  >
                     {option}
                   </div>
-                  <span className="text-[9px] text-slate-500 font-mono px-1">OUT</span>
+
+                  {/* (-) Count (+) Stepper */}
+                  <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded overflow-hidden">
+                    <button
+                      onClick={() => handleUpdateQty(photo, option, currentQty - (photo.defaultQuantity >= 12 ? 6 : 1))}
+                      className="w-5 h-5 text-slate-300 hover:text-white flex items-center justify-center transition hover:bg-slate-800 active:scale-90"
+                      title="Minus"
+                    >
+                      <Minus size={9} />
+                    </button>
+
+                    <span className="w-5 text-center font-mono font-black text-[10px] text-brand-gold select-none">
+                      {currentQty}
+                    </span>
+
+                    <button
+                      onClick={() => handleUpdateQty(photo, option, currentQty + (photo.defaultQuantity >= 12 ? 6 : 1))}
+                      className="w-5 h-5 text-slate-300 hover:text-white flex items-center justify-center transition hover:bg-slate-800 active:scale-90"
+                      title="Plus"
+                    >
+                      <Plus size={9} />
+                    </button>
+                  </div>
                 </div>
               );
-            }
+            })}
+          </div>
 
-            return (
-              <div
-                key={option}
-                className="flex items-center justify-between p-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-brand-gold/60 transition shadow-sm"
-              >
-                {/* Letter Badge */}
-                <div 
-                  className={`w-6 h-6 rounded ${badge.bg} ${badge.text} font-black text-xs flex items-center justify-center shadow flex-shrink-0`}
-                >
-                  {option}
-                </div>
+          {/* BOTTOM: Cart Button with ShoppingBag Icon */}
+          <button
+            onClick={() => setIsCartOpen(true)}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-[10px] shadow-lg transition active:scale-95 border border-amber-400/50"
+            title="Open Order Slip / Cart"
+          >
+            <ShoppingBag size={12} />
+            <span>{totalCartPieces > 0 ? `${totalCartPieces} pcs` : 'Cart'}</span>
+          </button>
 
-                {/* (-) Count (+) Stepper */}
-                <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded overflow-hidden">
-                  <button
-                    onClick={() => handleUpdateQty(photo, option, currentQty - (photo.defaultQuantity >= 12 ? 6 : 1))}
-                    className="w-5 h-6 text-slate-300 hover:text-white flex items-center justify-center transition hover:bg-slate-800 active:scale-90"
-                    title="Minus"
-                  >
-                    <Minus size={10} />
-                  </button>
-
-                  <span className="w-5 text-center font-mono font-black text-[11px] text-brand-gold select-none">
-                    {currentQty}
-                  </span>
-
-                  <button
-                    onClick={() => handleUpdateQty(photo, option, currentQty + (photo.defaultQuantity >= 12 ? 6 : 1))}
-                    className="w-5 h-6 text-slate-300 hover:text-white flex items-center justify-center transition hover:bg-slate-800 active:scale-90"
-                    title="Plus"
-                  >
-                    <Plus size={10} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
         </div>
       )}
 
