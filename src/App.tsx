@@ -19,9 +19,24 @@ import {
   Minus,
   Plus
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 function AppShell({ children }: { children: React.ReactNode }) {
+  // Try to lock orientation to landscape
+  useEffect(() => {
+    const lockOrientation = async () => {
+      try {
+        if (screen.orientation && screen.orientation.lock) {
+          // @ts-ignore
+          await screen.orientation.lock('landscape');
+        }
+      } catch (error) {
+        // Orientation lock usually fails unless the app is in fullscreen mode or installed as a PWA
+        console.debug('Orientation lock failed:', error);
+      }
+    };
+    lockOrientation();
+  }, []);
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith('/admin');
 
@@ -74,7 +89,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   // ---------------------------------------------------------------------------
   if (isAdminRoute) {
     return (
-      <div className="min-h-screen w-full bg-slate-950 text-slate-100 font-sans antialiased flex flex-col">
+      <div className="min-h-screen w-full bg-slate-950 text-slate-100 font-sans antialiased flex flex-col pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
         {/* PC Top Navigation Bar */}
         <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-6 py-3 flex items-center justify-between shadow-xl">
           <div className="flex items-center gap-4">
@@ -116,37 +131,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
   // 2. SHOWROOM APP CONTAINER (Mobile Full Screen, No 90 rotate button)
   // ---------------------------------------------------------------------------
   return (
-    <div className="fixed inset-0 w-full h-full bg-slate-950 text-slate-100 font-sans antialiased overflow-hidden select-none">
+    <div className="fixed inset-0 w-full h-full bg-slate-950 text-slate-100 font-sans antialiased overflow-hidden select-none pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
       
       {/* MOBILE SHOWROOM CONTAINER */}
       <div className="w-full h-full flex flex-col bg-brand-navy-dark overflow-hidden">
         
-        {/* ANDROID TOP STATUS BAR (Shown on Home only) */}
-        {showroomScreenMode === 'home' && (
-          <div className="h-6 bg-slate-950/95 px-4 flex items-center justify-between text-[11px] font-mono text-slate-400 border-b border-white/5 flex-shrink-0 z-30">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-200">10:24</span>
-              <span className="text-[10px] text-amber-400/90 font-bold tracking-wider">SHOWROOM</span>
-            </div>
-
-            {/* Front Camera Punch-hole indicator */}
-            <div className="w-3 h-3 rounded-full bg-black border border-slate-800 shadow-inner flex items-center justify-center">
-              <div className="w-1 h-1 rounded-full bg-slate-800" />
-            </div>
-
-            <div className="flex items-center gap-2.5 text-slate-300">
-              <span className="text-[10px] font-black text-amber-400">5G</span>
-              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M12 4C7.31 4 3.07 5.9 0 8.98L12 21 24 8.98C20.93 5.9 16.69 4 12 4z"/></svg>
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] font-bold">92%</span>
-                <div className="w-4 h-2 rounded-[2px] border border-slate-400 p-[1px] flex">
-                  <div className="h-full w-[85%] bg-emerald-400 rounded-[1px]" />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* APP ACTION BAR (Shown on Home only, hidden in subcategories) */}
         {showroomScreenMode === 'home' && (
           <header className="bg-brand-navy-card/95 backdrop-blur-md border-b border-brand-navy-border px-3 py-1.5 flex items-center justify-between gap-3 flex-shrink-0 z-20">
