@@ -15,7 +15,9 @@ import {
   CheckCircle2,
   Phone,
   MapPin,
-  Store
+  Store,
+  Minus,
+  Plus
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -25,6 +27,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   const cart = useAppStore(state => state.cart);
   const removeFromCart = useAppStore(state => state.removeFromCart);
+  const updateCartItemQuantity = useAppStore(state => state.updateCartItemQuantity);
   const clearCart = useAppStore(state => state.clearCart);
   const placeOrder = useAppStore(state => state.placeOrder);
   
@@ -157,7 +160,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
               <h1 className="text-sm font-black tracking-wider text-white">SHIVAM</h1>
             </Link>
 
-            {/* Right Header Utilities: Admin Web Link, Customer ID, Order Slip Button */}
+            {/* Right Header Utilities: Admin Web Link, Install App, Customer ID, Order Slip Button */}
             <div className="flex items-center gap-1.5 sm:gap-2">
               
               {/* Web Admin Dashboard Link */}
@@ -309,10 +312,35 @@ function AppShell({ children }: { children: React.ReactNode }) {
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-400 truncate mt-0.5">{item.subCategoryName}</p>
-                      <div className="text-xs font-mono font-bold text-amber-300 mt-1">
-                        Quantity: <span className="text-white text-sm">{item.quantity} pcs</span>
-                      </div>
                     </div>
+
+                    {/* Big Finger-Friendly Stepper in Cart */}
+                    <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl overflow-hidden p-0.5">
+                      <button
+                        onClick={() => {
+                          const step = item.quantity >= 12 ? 6 : 1;
+                          updateCartItemQuantity(idx, item.quantity - step);
+                        }}
+                        className="w-9 h-9 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-200 active:scale-90 rounded-lg transition"
+                        title="Decrease"
+                      >
+                        <Minus size={15} strokeWidth={2.5} />
+                      </button>
+                      <span className="w-11 text-center font-mono font-black text-xs sm:text-sm text-amber-300 select-none">
+                        {item.quantity}
+                      </span>
+                      <button
+                        onClick={() => {
+                          const step = item.quantity >= 12 ? 6 : 1;
+                          updateCartItemQuantity(idx, item.quantity + step);
+                        }}
+                        className="w-9 h-9 flex items-center justify-center bg-amber-500 hover:bg-amber-400 text-black active:scale-90 rounded-lg transition font-black"
+                        title="Increase"
+                      >
+                        <Plus size={15} strokeWidth={2.5} />
+                      </button>
+                    </div>
+
                     <button 
                       onClick={() => removeFromCart(idx)}
                       className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"

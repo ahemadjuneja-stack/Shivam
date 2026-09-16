@@ -996,51 +996,112 @@ export function AdminDashboard() {
           TAB 4: MOBILE APP TEST / DOWNLOAD GUIDE
           ----------------------------------------------------------------------- */}
       {activeTab === 'mobile_guide' && (
-        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl max-w-3xl mx-auto space-y-6">
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl max-w-4xl mx-auto space-y-6">
           
           <div className="text-center space-y-2">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center font-black text-black text-2xl shadow-xl mx-auto">
               S
             </div>
             <h3 className="text-xl sm:text-2xl font-black text-white">
-              Test & Install SHIVAM on Mobile
+              Microsoft Edge & Mobile App Download Guide
             </h3>
-            <p className="text-xs sm:text-sm text-slate-400 max-w-lg mx-auto">
-              Follow these simple steps to download and test the app on your Android smartphone like a native Android APK.
+            <p className="text-xs sm:text-sm text-slate-400 max-w-xl mx-auto leading-relaxed">
+              Agar aap <strong>Microsoft Edge</strong> browser par hain, toh niche diye gaye aasaan steps follow karein. 
+              (Browser preview iframe me direct install button nahi aata, isliye direct link kholna padta hai).
             </p>
           </div>
 
-          {/* Step-by-Step Instructions */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+          {/* Critical Tip for Edge Users */}
+          <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs space-y-2">
+            <div className="flex items-center gap-2 font-bold text-amber-300">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              <span>Microsoft Edge par "Install / Download" kyu nahi dikhta?</span>
+            </div>
+            <p className="text-[12px] text-slate-300 leading-relaxed">
+              Edge browser kisi bhi <em>iframe (preview editor)</em> ke andar install icon nahi dikhata. 
+              Isko install karne ke liye bas ek baar app ko <strong>New Browser Tab</strong> me kholna hota hai:
+            </p>
+            <div className="pt-2 flex flex-wrap gap-2.5">
+              <button
+                onClick={() => window.open(window.location.origin, '_blank')}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center gap-2 shadow-lg transition active:scale-95"
+              >
+                <span>Edge New Tab me Direct Kholein</span>
+                <span className="text-[10px] bg-black/20 px-1.5 py-0.5 rounded font-mono">Open</span>
+              </button>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(window.location.origin);
+                  alert('App Link copied! Edge address bar me paste karke Enter dabayein.');
+                }}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition"
+              >
+                <Copy size={13} />
+                <span>Copy App URL</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 2-Column Instructions: Edge on PC vs Edge on Mobile */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
             
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-              <span className="w-6 h-6 rounded-full bg-amber-500 text-black font-black text-xs flex items-center justify-center">
-                1
-              </span>
-              <h4 className="font-bold text-sm text-white">Open Link in Phone</h4>
-              <p className="text-xs text-slate-400">
-                Apne Android mobile ke <strong>Google Chrome browser</strong> me is app ki link open karein.
+            {/* Box 1: Edge on PC */}
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-amber-400 font-black text-sm">
+                <span className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center text-xs">PC</span>
+                <span>Microsoft Edge (PC / Laptop)</span>
+              </div>
+
+              <div className="space-y-2 text-xs text-slate-300">
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <p className="font-bold text-white mb-0.5">Method 1: Address Bar se</p>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Edge ke URL bar ke bilkul right side me ek chhota icon aata hai: <strong>"App available. Install SHIVAM"</strong> (+ symbol). Click karke <strong>"Install"</strong> dabayein.
+                  </p>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <p className="font-bold text-white mb-0.5">Method 2: Edge Menu (3 Dots) se</p>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Top-right <strong>3 Dots (...)</strong> &rarr; <strong>Apps (ऐप्स)</strong> &rarr; <strong>"Install this site as an app" (इस साइट को एक ऐप के रूप में इंस्टॉल करें)</strong> par click karein.
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-emerald-400 font-medium">
+                ✓ Desktop icon ban jayega aur app bina kisi browser bar ke open hogi.
               </p>
             </div>
 
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-              <span className="w-6 h-6 rounded-full bg-amber-500 text-black font-black text-xs flex items-center justify-center">
-                2
-              </span>
-              <h4 className="font-bold text-sm text-white">Tap Chrome Menu (⋮)</h4>
-              <p className="text-xs text-slate-400">
-                Chrome ke top-right 3 dots (⋮) par tap karein aur <strong>"Add to Home screen" / "Install app"</strong> select karein.
-              </p>
-            </div>
+            {/* Box 2: Edge on Mobile Phone */}
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-amber-400 font-black text-sm">
+                <span className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center text-xs">Ph</span>
+                <span>Microsoft Edge (Mobile / Android)</span>
+              </div>
 
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-              <span className="w-6 h-6 rounded-full bg-amber-500 text-black font-black text-xs flex items-center justify-center">
-                3
-              </span>
-              <h4 className="font-bold text-sm text-white">Native App Launch</h4>
-              <p className="text-xs text-slate-400">
-                Phone ki home screen par <strong>SHIVAM</strong> ka app icon ban jayega. Tap karke bina URL bar ke real Android app ki tarah use karein.
-              </p>
+              <div className="space-y-2 text-xs text-slate-300">
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <p className="font-bold text-white mb-0.5">Step 1: Phone me Link Kholein</p>
+                  <p className="text-slate-400 text-[11px]">
+                    Mobile ke Edge browser me URL paste karein ya WhatsApp se click karke kholein.
+                  </p>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <p className="font-bold text-white mb-0.5">Step 2: Niche 3 Lines Menu (☰)</p>
+                  <p className="text-slate-400 text-[11px]">
+                    Screen ke bottom me <strong>3 Lines / Dots</strong> menu par tap karein.
+                  </p>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <p className="font-bold text-white mb-0.5">Step 3: "Add to phone" / "Add to Home screen"</p>
+                  <p className="text-slate-400 text-[11px]">
+                    Option me se <strong>"Add to phone"</strong> select karein. App phone me download/install ho jayegi!
+                  </p>
+                </div>
+              </div>
             </div>
 
           </div>
@@ -1048,7 +1109,7 @@ export function AdminDashboard() {
           {/* Quick URL Box */}
           <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between gap-3">
             <div className="truncate">
-              <p className="text-[11px] font-bold text-slate-400 uppercase">App Link for Mobile:</p>
+              <p className="text-[11px] font-bold text-slate-400 uppercase">App Link for Mobile & Edge:</p>
               <p className="text-xs font-mono text-amber-400 truncate mt-0.5">
                 {window.location.origin}
               </p>
@@ -1056,9 +1117,9 @@ export function AdminDashboard() {
             <button
               onClick={() => {
                 navigator.clipboard.writeText(window.location.origin);
-                alert('App link copied! Send it on WhatsApp to open on your phone.');
+                alert('App link copied! Send it on WhatsApp or paste in Edge address bar.');
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs transition active:scale-95 flex-shrink-0"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs transition active:scale-95 flex-shrink-0"
             >
               <Copy size={13} />
               <span>Copy Link</span>

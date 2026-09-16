@@ -30,6 +30,7 @@ interface AppState {
 
   addToCart: (item: OrderCartItem) => void;
   setItemQuantity: (photo: CatalogPhoto, optionLetter: string, quantity: number) => void;
+  updateCartItemQuantity: (index: number, quantity: number) => void;
   removeFromCart: (index: number) => void;
   clearCart: () => void;
   setCurrentCustomer: (customer: Customer | null) => void;
@@ -404,6 +405,17 @@ export const useAppStore = create<AppState>()(
           };
           return { cart: [...state.cart, newItem] };
         }
+      }),
+      updateCartItemQuantity: (index, quantity) => set((state) => {
+        if (index < 0 || index >= state.cart.length) return state;
+        if (quantity <= 0) {
+          const newCart = [...state.cart];
+          newCart.splice(index, 1);
+          return { cart: newCart };
+        }
+        const newCart = [...state.cart];
+        newCart[index] = { ...newCart[index], quantity };
+        return { cart: newCart };
       }),
       removeFromCart: (index) => set((state) => {
         const newCart = [...state.cart];

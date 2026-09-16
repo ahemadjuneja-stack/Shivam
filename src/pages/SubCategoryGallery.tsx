@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { ShoppingCart } from 'lucide-react';
+import { ShoppingCart, Minus, Plus } from 'lucide-react';
 import { useState } from 'react';
 
 export function SubCategoryGallery() {
@@ -72,16 +72,28 @@ export function SubCategoryGallery() {
                       <div className="text-center font-black text-brand-gold bg-slate-900 rounded py-1 border border-slate-700">
                         {opt}
                       </div>
-                      <div className="flex items-center justify-between bg-slate-900 rounded px-2 py-1 border border-slate-700">
-                        <button onClick={() => updateQty(photo.id, opt, qty - 1)} className="text-slate-400 font-bold hover:text-white px-1">-</button>
-                        <span className="text-xs font-bold w-6 text-center">{qty}</span>
-                        <button onClick={() => updateQty(photo.id, opt, qty + 1)} className="text-slate-400 font-bold hover:text-white px-1">+</button>
+                      <div className="flex items-center justify-between bg-slate-950 rounded-lg p-0.5 border border-slate-700">
+                        <button 
+                          onClick={() => updateQty(photo.id, opt, qty - 1)} 
+                          className="w-8 h-8 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-200 active:scale-90 font-bold transition"
+                          title="Minus"
+                        >
+                          <Minus size={14} strokeWidth={2.5} />
+                        </button>
+                        <span className="text-sm font-mono font-black text-brand-gold w-8 text-center">{qty}</span>
+                        <button 
+                          onClick={() => updateQty(photo.id, opt, qty + 1)} 
+                          className="w-8 h-8 flex items-center justify-center rounded bg-amber-500 hover:bg-amber-400 text-black active:scale-90 font-black transition"
+                          title="Plus"
+                        >
+                          <Plus size={14} strokeWidth={2.5} />
+                        </button>
                       </div>
                       <button 
                         onClick={() => handleAdd(photo, opt)}
-                        className="w-full bg-brand-gold hover:bg-brand-gold-light text-black font-bold text-xs py-1.5 rounded flex items-center justify-center gap-1 transition"
+                        className="w-full bg-brand-gold hover:bg-brand-gold-light active:scale-95 text-black font-black text-xs py-2 rounded-lg flex items-center justify-center gap-1.5 transition shadow"
                       >
-                        <ShoppingCart size={12} /> Add
+                        <ShoppingCart size={14} /> Add
                       </button>
                     </div>
                   );

@@ -1,10 +1,11 @@
 import { useAppStore } from '../store';
-import { Trash2, Send } from 'lucide-react';
+import { Trash2, Send, Minus, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export function Cart() {
   const cart = useAppStore(state => state.cart);
   const removeFromCart = useAppStore(state => state.removeFromCart);
+  const updateCartItemQuantity = useAppStore(state => state.updateCartItemQuantity);
   const currentCustomer = useAppStore(state => state.currentCustomer);
   const placeOrder = useAppStore(state => state.placeOrder);
   const navigate = useNavigate();
@@ -43,9 +44,31 @@ export function Cart() {
                 <div className="font-bold text-white">{item.photoCode} • Option {item.optionLetter}</div>
                 <div className="text-sm text-slate-400">{item.subCategoryName}</div>
               </div>
-              <div className="text-right mr-4">
-                <div className="text-xs text-slate-400">Qty</div>
-                <div className="font-bold text-lg">{item.quantity}</div>
+              <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl overflow-hidden p-0.5">
+                <button 
+                  onClick={() => {
+                    const step = item.quantity >= 12 ? 6 : 1;
+                    updateCartItemQuantity(idx, item.quantity - step);
+                  }}
+                  className="w-10 h-10 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-200 active:scale-90 rounded-lg transition"
+                  title="Decrease"
+                >
+                  <Minus size={16} strokeWidth={2.5} />
+                </button>
+                <div className="w-14 text-center">
+                  <span className="font-mono font-black text-base text-brand-gold">{item.quantity}</span>
+                  <span className="block text-[10px] text-slate-400">pcs</span>
+                </div>
+                <button 
+                  onClick={() => {
+                    const step = item.quantity >= 12 ? 6 : 1;
+                    updateCartItemQuantity(idx, item.quantity + step);
+                  }}
+                  className="w-10 h-10 flex items-center justify-center bg-amber-500 hover:bg-amber-400 text-black font-black active:scale-90 rounded-lg transition"
+                  title="Increase"
+                >
+                  <Plus size={16} strokeWidth={2.5} />
+                </button>
               </div>
               <button onClick={() => removeFromCart(idx)} className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition">
                 <Trash2 size={20} />

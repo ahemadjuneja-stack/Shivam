@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE68A" />
+      <stop offset="50%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#D97706" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background with rounded squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="url(#goldGrad)" stroke-width="8" opacity="0.4" />
+  
+  <!-- Outer Gold Ring -->
+  <circle cx="256" cy="220" r="140" fill="none" stroke="url(#goldGrad)" stroke-width="12" />
+  <circle cx="256" cy="220" r="120" fill="#0A0F1D" />
+
+  <!-- Monogram S -->
+  <path d="M 290 140 C 240 130, 210 160, 210 190 C 210 240, 305 220, 305 260 C 305 285, 275 300, 230 290" 
+        fill="none" stroke="url(#goldGrad)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Text SHIVAM -->
+  <text x="256" y="420" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="46" fill="url(#goldGrad)" letter-spacing="8">SHIVAM</text>
+  <text x="256" y="455" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="18" fill="#94A3B8" letter-spacing="5">WHOLESALE B2B</text>
+</svg>

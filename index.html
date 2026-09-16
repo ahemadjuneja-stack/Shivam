@@ -7,9 +7,26 @@
     <meta name="description" content="B2B wholesale catalog and ordering app for cosmetics, imitation jewelry, and hair accessories with 16:9 multi-product photo ordering." />
     <meta property="og:title" content="SHIVAM" />
     <meta property="og:description" content="B2B wholesale catalog and ordering app for cosmetics, imitation jewelry, and hair accessories with 16:9 multi-product photo ordering." />
+    
+    <!-- PWA Web App Manifest and Theme -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#070D19" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SHIVAM" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(function() {});
+        });
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

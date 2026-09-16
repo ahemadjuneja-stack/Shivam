@@ -467,7 +467,7 @@ export function Home() {
 
       {/* RIGHT: COMPACT SIDE PANEL FOR ABCD (With Gallery button, Product Code, ABCD, and Cart icon) */}
       {photo && (
-        <div className="w-[114px] sm:w-[120px] h-full rounded-xl bg-slate-900 border border-slate-800 p-1.5 flex flex-col justify-between shadow-xl flex-shrink-0">
+        <div className="w-[145px] sm:w-[160px] md:w-[175px] h-full rounded-2xl bg-slate-900 border border-slate-800 p-2 flex flex-col justify-between shadow-2xl flex-shrink-0">
           
           {/* TOP: Gallery Back Button & Product Code */}
           <div className="flex flex-col gap-1.5">
@@ -476,21 +476,21 @@ export function Home() {
                 setScreenMode('gallery');
                 setShowroomScreenMode('gallery');
               }}
-              className="w-full flex items-center justify-center gap-1 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700/80 transition active:scale-95 shadow-sm"
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700/80 transition active:scale-95 shadow-sm"
               title="Back to Gallery"
             >
-              <ArrowLeft size={11} className="text-brand-gold" />
+              <ArrowLeft size={13} className="text-brand-gold" />
               <span>Gallery</span>
             </button>
 
             {/* Product Number in ABCD Side Panel */}
-            <div className="text-center py-0.5 px-1 rounded-md bg-black/60 border border-slate-800 font-mono font-black text-[10px] text-brand-gold truncate shadow-inner">
+            <div className="text-center py-1 px-1.5 rounded-lg bg-black/70 border border-slate-800 font-mono font-black text-xs text-brand-gold truncate shadow-inner">
               {photo?.photoCode}
             </div>
           </div>
 
-          {/* MIDDLE: ABCD Steppers */}
-          <div className="flex flex-col gap-1.5 py-1">
+          {/* MIDDLE: ABCD Steppers (Enlarged, high-contrast, finger-friendly) */}
+          <div className="flex flex-col gap-2 py-1 overflow-y-auto scrollbar-none">
             {['A', 'B', 'C', 'D'].slice(0, photo.itemCount).map(option => {
               const isAvailable = photo[`${option.toLowerCase()}Available` as keyof typeof photo];
               const currentQty = getOptionQty(photo.id, option, photo.defaultQuantity);
@@ -500,12 +500,12 @@ export function Home() {
                 return (
                   <div 
                     key={option} 
-                    className="flex items-center justify-between p-1 rounded-lg bg-slate-950/60 border border-slate-800/80 opacity-40"
+                    className="flex items-center justify-between p-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80 opacity-40"
                   >
-                    <div className="w-5 h-5 rounded bg-slate-800 text-slate-500 font-black text-[10px] flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-slate-500 font-black text-xs flex items-center justify-center">
                       {option}
                     </div>
-                    <span className="text-[9px] text-slate-500 font-mono px-1">OUT</span>
+                    <span className="text-[10px] text-slate-500 font-mono font-bold px-2">OUT</span>
                   </div>
                 );
               }
@@ -513,35 +513,46 @@ export function Home() {
               return (
                 <div
                   key={option}
-                  className="flex items-center justify-between p-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-brand-gold/60 transition shadow-sm"
+                  className="flex items-center justify-between p-1 rounded-xl bg-slate-950 border border-slate-800 hover:border-brand-gold/60 transition shadow-sm gap-1.5"
                 >
-                  {/* Letter Badge */}
+                  {/* Letter Badge (A, B, C, D) */}
                   <div 
-                    className={`w-5 h-5 rounded ${badge.bg} ${badge.text} font-black text-[10px] flex items-center justify-center shadow flex-shrink-0`}
+                    className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg ${badge.bg} ${badge.text} font-black text-xs sm:text-sm flex items-center justify-center shadow flex-shrink-0`}
                   >
                     {option}
                   </div>
 
-                  {/* (-) Count (+) Stepper */}
-                  <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded overflow-hidden">
+                  {/* Large Finger-Friendly (-) Count (+) Stepper */}
+                  <div className="flex items-center bg-slate-900 border border-slate-700/90 rounded-lg overflow-hidden flex-1 justify-between">
+                    {/* Big Minus Button */}
                     <button
                       onClick={() => handleUpdateQty(photo, option, currentQty - (photo.defaultQuantity >= 12 ? 6 : 1))}
-                      className="w-5 h-5 text-slate-300 hover:text-white flex items-center justify-center transition hover:bg-slate-800 active:scale-90"
-                      title="Minus"
+                      disabled={currentQty <= 0}
+                      className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center transition rounded-l-md active:scale-90 ${
+                        currentQty > 0 
+                          ? 'bg-slate-800 hover:bg-slate-700 text-slate-100' 
+                          : 'bg-slate-900 text-slate-600 opacity-40 cursor-not-allowed'
+                      }`}
+                      title="Decrease Quantity"
                     >
-                      <Minus size={9} />
+                      <Minus size={15} strokeWidth={2.5} />
                     </button>
 
-                    <span className="w-5 text-center font-mono font-black text-[10px] text-brand-gold select-none">
+                    {/* Centered Quantity Number */}
+                    <span className="flex-1 text-center font-mono font-black text-xs sm:text-sm text-brand-gold select-none px-1">
                       {currentQty}
                     </span>
 
+                    {/* Big Plus Button (Amber high visibility) */}
                     <button
-                      onClick={() => handleUpdateQty(photo, option, currentQty + (photo.defaultQuantity >= 12 ? 6 : 1))}
-                      className="w-5 h-5 text-slate-300 hover:text-white flex items-center justify-center transition hover:bg-slate-800 active:scale-90"
-                      title="Plus"
+                      onClick={() => {
+                        const step = photo.defaultQuantity >= 12 ? 6 : 1;
+                        handleUpdateQty(photo, option, currentQty === 0 ? photo.defaultQuantity : currentQty + step);
+                      }}
+                      className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-500 hover:bg-amber-400 active:bg-amber-300 text-black flex items-center justify-center transition font-black rounded-r-md active:scale-90 shadow-sm"
+                      title="Increase Quantity / Add"
                     >
-                      <Plus size={9} />
+                      <Plus size={15} strokeWidth={2.5} />
                     </button>
                   </div>
                 </div>
@@ -552,11 +563,11 @@ export function Home() {
           {/* BOTTOM: Cart Button with ShoppingBag Icon */}
           <button
             onClick={() => setIsCartOpen(true)}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-[10px] shadow-lg transition active:scale-95 border border-amber-400/50"
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs shadow-lg transition active:scale-95 border border-amber-400/50"
             title="Open Order Slip / Cart"
           >
-            <ShoppingBag size={12} />
-            <span>{totalCartPieces > 0 ? `${totalCartPieces} pcs` : 'Cart'}</span>
+            <ShoppingBag size={14} />
+            <span>{totalCartPieces > 0 ? `${totalCartPieces} pcs` : 'View Cart'}</span>
           </button>
 
         </div>
