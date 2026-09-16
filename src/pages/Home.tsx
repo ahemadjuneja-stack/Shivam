@@ -129,18 +129,6 @@ export function Home() {
     setTimeout(() => setQtyFeedback(null), 1200);
   };
 
-  // Batch increment/decrement all options together
-  const handleBatchAll = (photo: CatalogPhoto, delta: number) => {
-    const options = ['A', 'B', 'C', 'D'].slice(0, photo.itemCount);
-    options.forEach(opt => {
-      const isAvailable = photo[`${opt.toLowerCase()}Available` as keyof typeof photo];
-      if (isAvailable) {
-        const current = getOptionQty(photo.id, opt, photo.defaultQuantity);
-        handleUpdateQty(photo, opt, Math.max(0, current + delta));
-      }
-    });
-  };
-
   const letterBadgeColors: Record<string, { bg: string; text: string }> = {
     A: { bg: 'bg-amber-400', text: 'text-black' },
     B: { bg: 'bg-sky-400', text: 'text-black' },
@@ -405,28 +393,28 @@ export function Home() {
   const photo = selectedPhoto || galleryPhotos[0];
 
   return (
-    <div className="w-full h-full flex flex-row gap-2.5 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden shadow-2xl p-2 select-none items-stretch">
+    <div className="w-full h-full flex flex-row gap-2 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden shadow-2xl p-1.5 select-none items-stretch">
       
-      {/* LEFT/CENTER: 16:9 HDTV PRODUCT IMAGE (100% Clean, NO ABCD on top!) */}
+      {/* LEFT/CENTER: MAXIMIZED BIG PRODUCT IMAGE */}
       <div className="flex-1 h-full rounded-xl bg-black border border-slate-800/80 overflow-hidden relative flex items-center justify-center">
         
-        {/* Strict 16:9 HDTV Big Photo */}
-        <div className="w-full aspect-video max-h-full relative flex items-center justify-center overflow-hidden">
+        {/* Full-view Big Photo */}
+        <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
           <img
             key={photo?.imageUri}
             src={photo?.imageUri}
             alt={photo?.photoCode}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
           />
 
           {/* Slide Navigation Left Arrow */}
           {galleryPhotos.length > 1 && (
             <button
               onClick={handlePrevPhoto}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 hover:border-brand-gold transition-transform hover:scale-105 active:scale-95 z-10 shadow-2xl"
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 hover:border-brand-gold transition-transform hover:scale-105 active:scale-95 z-10 shadow-2xl"
               title="Previous"
             >
-              <ChevronLeft size={22} />
+              <ChevronLeft size={20} />
             </button>
           )}
 
@@ -434,14 +422,14 @@ export function Home() {
           {galleryPhotos.length > 1 && (
             <button
               onClick={handleNextPhoto}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 hover:border-brand-gold transition-transform hover:scale-105 active:scale-95 z-10 shadow-2xl"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 hover:border-brand-gold transition-transform hover:scale-105 active:scale-95 z-10 shadow-2xl"
               title="Next"
             >
-              <ChevronRight size={22} />
+              <ChevronRight size={20} />
             </button>
           )}
 
-          {/* Slide Dots at bottom of 16:9 frame */}
+          {/* Slide Dots at bottom */}
           {galleryPhotos.length > 1 && (
             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/15 flex items-center gap-1.5 z-10">
               {galleryPhotos.map((p, i) => (
@@ -484,92 +472,65 @@ export function Home() {
 
       </div>
 
-      {/* RIGHT: DEDICATED SIDE PANEL FOR ABCD (Not on top of the product!) */}
+      {/* RIGHT: COMPACT SIDE PANEL FOR ABCD (Size sirf itni jisme ABCD aur +- dikhe) */}
       {photo && (
-        <div className="w-56 h-full rounded-xl bg-slate-900 border border-slate-800 p-2.5 flex flex-col justify-between shadow-xl flex-shrink-0">
-          
-          <div className="flex flex-col gap-2">
-            <div className="text-center pb-1 border-b border-slate-800">
-              <span className="text-[11px] font-mono font-bold text-slate-400">Options</span>
-            </div>
+        <div className="w-[102px] sm:w-[108px] h-full rounded-xl bg-slate-900 border border-slate-800 p-1.5 flex flex-col justify-center gap-2 shadow-xl flex-shrink-0">
+          {['A', 'B', 'C', 'D'].slice(0, photo.itemCount).map(option => {
+            const isAvailable = photo[`${option.toLowerCase()}Available` as keyof typeof photo];
+            const currentQty = getOptionQty(photo.id, option, photo.defaultQuantity);
+            const badge = letterBadgeColors[option];
 
-            {/* ABCD Stepper Options */}
-            {['A', 'B', 'C', 'D'].slice(0, photo.itemCount).map(option => {
-              const isAvailable = photo[`${option.toLowerCase()}Available` as keyof typeof photo];
-              const currentQty = getOptionQty(photo.id, option, photo.defaultQuantity);
-              const badge = letterBadgeColors[option];
-
-              if (!isAvailable) {
-                return (
-                  <div 
-                    key={option} 
-                    className="flex items-center justify-between p-1 rounded-lg bg-slate-950/60 border border-slate-800/80 opacity-40"
-                  >
-                    <div className="w-7 h-7 rounded-md bg-slate-800 text-slate-500 font-black text-xs flex items-center justify-center">
-                      {option}
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-mono px-2">OUT</span>
-                  </div>
-                );
-              }
-
+            if (!isAvailable) {
               return (
-                <div
-                  key={option}
-                  className="flex items-center justify-between p-1.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-brand-gold/60 transition shadow-sm"
+                <div 
+                  key={option} 
+                  className="flex items-center justify-between p-1 rounded-lg bg-slate-950/60 border border-slate-800/80 opacity-40"
                 >
-                  {/* Letter Badge */}
-                  <div 
-                    className={`w-7 h-7 rounded-lg ${badge.bg} ${badge.text} font-black text-xs flex items-center justify-center shadow flex-shrink-0`}
-                  >
+                  <div className="w-6 h-6 rounded bg-slate-800 text-slate-500 font-black text-xs flex items-center justify-center">
                     {option}
                   </div>
-
-                  {/* (-) Count (+) Stepper */}
-                  <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded-lg overflow-hidden">
-                    <button
-                      onClick={() => handleUpdateQty(photo, option, currentQty - (photo.defaultQuantity >= 12 ? 6 : 1))}
-                      className="w-6 h-7 text-slate-300 hover:text-white flex items-center justify-center transition hover:bg-slate-800 active:scale-90"
-                      title="Minus"
-                    >
-                      <Minus size={11} />
-                    </button>
-
-                    <span className="w-8 text-center font-mono font-black text-xs text-brand-gold select-none">
-                      {currentQty}
-                    </span>
-
-                    <button
-                      onClick={() => handleUpdateQty(photo, option, currentQty + (photo.defaultQuantity >= 12 ? 6 : 1))}
-                      className="w-6 h-7 text-slate-300 hover:text-white flex items-center justify-center transition hover:bg-slate-800 active:scale-90"
-                      title="Plus"
-                    >
-                      <Plus size={11} />
-                    </button>
-                  </div>
+                  <span className="text-[9px] text-slate-500 font-mono px-1">OUT</span>
                 </div>
               );
-            })}
-          </div>
+            }
 
-          {/* Bottom Batch Steppers */}
-          <div className="pt-2 border-t border-slate-800 flex items-center gap-1.5">
-            <button
-              onClick={() => handleBatchAll(photo, -(photo.defaultQuantity >= 12 ? 6 : 1))}
-              className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold transition flex items-center justify-center gap-1 active:scale-95 border border-slate-700"
-            >
-              <Minus size={10} />
-              <span>ALL</span>
-            </button>
-            <button
-              onClick={() => handleBatchAll(photo, (photo.defaultQuantity >= 12 ? 6 : 1))}
-              className="flex-1 py-1.5 rounded-lg bg-brand-gold hover:bg-brand-gold-light text-black text-[10px] font-black transition flex items-center justify-center gap-1 active:scale-95 shadow-md"
-            >
-              <Plus size={10} />
-              <span>ALL</span>
-            </button>
-          </div>
+            return (
+              <div
+                key={option}
+                className="flex items-center justify-between p-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-brand-gold/60 transition shadow-sm"
+              >
+                {/* Letter Badge */}
+                <div 
+                  className={`w-6 h-6 rounded ${badge.bg} ${badge.text} font-black text-xs flex items-center justify-center shadow flex-shrink-0`}
+                >
+                  {option}
+                </div>
 
+                {/* (-) Count (+) Stepper */}
+                <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded overflow-hidden">
+                  <button
+                    onClick={() => handleUpdateQty(photo, option, currentQty - (photo.defaultQuantity >= 12 ? 6 : 1))}
+                    className="w-5 h-6 text-slate-300 hover:text-white flex items-center justify-center transition hover:bg-slate-800 active:scale-90"
+                    title="Minus"
+                  >
+                    <Minus size={10} />
+                  </button>
+
+                  <span className="w-5 text-center font-mono font-black text-[11px] text-brand-gold select-none">
+                    {currentQty}
+                  </span>
+
+                  <button
+                    onClick={() => handleUpdateQty(photo, option, currentQty + (photo.defaultQuantity >= 12 ? 6 : 1))}
+                    className="w-5 h-6 text-slate-300 hover:text-white flex items-center justify-center transition hover:bg-slate-800 active:scale-90"
+                    title="Plus"
+                  >
+                    <Plus size={10} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
