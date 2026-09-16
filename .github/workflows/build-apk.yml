@@ -37,9 +37,22 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
-      - name: Fix Kotlin Duplicate Class Conflict
+      - name: Fix Kotlin Duplicate Dependencies
         run: |
-          echo "configurations.all { resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22' }" >> android/app/build.gradle
+          echo "android.enableJetifier=true" >> android/gradle.properties
+          cat << 'EOF' > fix.gradle
+          allprojects {
+              configurations.all {
+                  resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+                      def requested = details.requested
+                      if (requested.group == 'org.jetbrains.kotlin' && (requested.name == 'kotlin-stdlib-jdk7' || requested.name == 'kotlin-stdlib-jdk8')) {
+                          details.useTarget("org.jetbrains.kotlin:kotlin-stdlib:${requested.version}")
+                      }
+                  }
+              }
+          }
+          EOF
+          cat fix.gradle >> android/build.gradle
 
       - name: Grant Execute Permission to Gradle
         run: chmod +x android/gradlew
