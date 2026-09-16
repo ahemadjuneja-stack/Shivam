@@ -37,7 +37,11 @@ interface AppState {
   
   // Admin Actions
   addCustomer: (customer: Customer) => void;
+  updateCustomer: (customerCode: string, data: Partial<Customer>) => void;
   updateOrderStatus: (orderId: string, department: 'imitation' | 'cosmetics' | 'hair', status: string) => void;
+  addPhoto: (photo: CatalogPhoto) => void;
+  updatePhoto: (photoId: string, data: Partial<CatalogPhoto>) => void;
+  deletePhoto: (photoId: string) => void;
   resetToDefaults: () => void;
 }
 
@@ -441,6 +445,10 @@ export const useAppStore = create<AppState>()(
       }),
 
       addCustomer: (customer) => set((state) => ({ customers: [...state.customers, customer] })),
+
+      updateCustomer: (customerCode, data) => set((state) => ({
+        customers: state.customers.map(c => c.customerCode === customerCode ? { ...c, ...data } : c)
+      })),
       
       updateOrderStatus: (orderId, department, status) => set((state) => {
         const newOrders = state.orders.map(order => {
@@ -462,6 +470,16 @@ export const useAppStore = create<AppState>()(
         });
         return { orders: newOrders };
       }),
+
+      addPhoto: (photo) => set((state) => ({ photos: [...state.photos, photo] })),
+
+      updatePhoto: (photoId, data) => set((state) => ({
+        photos: state.photos.map(p => p.id === photoId ? { ...p, ...data } : p)
+      })),
+
+      deletePhoto: (photoId) => set((state) => ({
+        photos: state.photos.filter(p => p.id !== photoId)
+      })),
 
       resetToDefaults: () => set({
         categories: defaultCategories,

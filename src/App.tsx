@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Home } from './pages/Home';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { CategoryGallery } from './pages/CategoryGallery';
@@ -14,11 +14,15 @@ import {
   Send, 
   CheckCircle2,
   Phone,
-  MapPin
+  MapPin,
+  Store
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 function AppShell({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith('/admin');
+
   const cart = useAppStore(state => state.cart);
   const removeFromCart = useAppStore(state => state.removeFromCart);
   const clearCart = useAppStore(state => state.clearCart);
@@ -61,65 +65,59 @@ function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const totalPieces = cart.reduce((sum, item) => sum + item.quantity, 0);
-  
-  // Track device/screen orientation
-  const [isPortrait, setIsPortrait] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerHeight > window.innerWidth;
-    }
-    return false;
-  });
-  const [forceRotateLandscape, setForceRotateLandscape] = useState(false);
 
-  useEffect(() => {
-    const handleResize = () => {
-      setIsPortrait(window.innerHeight > window.innerWidth);
-    };
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
-    };
-  }, []);
-
-  return (
-    <div 
-      className={`fixed inset-0 bg-slate-950 text-slate-100 font-sans antialiased overflow-hidden select-none ${
-        forceRotateLandscape
-          ? 'origin-top-left'
-          : ''
-      }`}
-      style={forceRotateLandscape ? {
-        width: '100vh',
-        height: '100vw',
-        transform: 'rotate(90deg) translateY(-100%)',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        zIndex: 50
-      } : {
-        width: '100vw',
-        height: '100vh'
-      }}
-    >
-      
-      {/* Landscape Helper Notice when in Portrait Mode */}
-      {isPortrait && !forceRotateLandscape && (
-        <div className="bg-amber-500/90 text-black px-3 py-1 text-xs font-bold flex items-center justify-between z-50 flex-shrink-0 animate-fadeIn">
-          <div className="flex items-center gap-1.5">
-            <span>📱 Turn phone sideways for full Landscape Showroom</span>
+  // ---------------------------------------------------------------------------
+  // 1. PC WEB ADMIN DASHBOARD LAYOUT (Full Screen, Desktop Friendly)
+  // ---------------------------------------------------------------------------
+  if (isAdminRoute) {
+    return (
+      <div className="min-h-screen w-full bg-slate-950 text-slate-100 font-sans antialiased flex flex-col">
+        {/* PC Top Navigation Bar */}
+        <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-6 py-3 flex items-center justify-between shadow-xl">
+          <div className="flex items-center gap-4">
+            <Link to="/" className="flex items-center gap-2 group">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center font-black text-black text-sm shadow-md group-hover:scale-105 transition-transform">
+                S
+              </div>
+              <div>
+                <h1 className="text-base font-black tracking-wider text-white flex items-center gap-2">
+                  <span>SHIVAM</span>
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold uppercase tracking-widest font-mono">
+                    Admin Portal (Web PC)
+                  </span>
+                </h1>
+              </div>
+            </Link>
           </div>
-          <button
-            onClick={() => setForceRotateLandscape(true)}
-            className="bg-black text-amber-400 px-2.5 py-0.5 rounded text-[11px] font-black hover:bg-slate-900 transition flex items-center gap-1 active:scale-95"
-          >
-            <span>Rotate App 90° 🔄</span>
-          </button>
-        </div>
-      )}
 
-      {/* ANDROID LANDSCAPE MOBILE CONTAINER */}
+          <div className="flex items-center gap-3">
+            {/* Direct Switch to Mobile Showroom */}
+            <Link
+              to="/"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition shadow-lg active:scale-95"
+              title="Open Mobile Showroom App"
+            >
+              <Store size={15} />
+              <span>Go to Showroom App</span>
+            </Link>
+          </div>
+        </header>
+
+        {/* PC Admin Content Container */}
+        <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+          {children}
+        </main>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 2. SHOWROOM APP CONTAINER (Mobile Full Screen, No 90 rotate button)
+  // ---------------------------------------------------------------------------
+  return (
+    <div className="fixed inset-0 w-full h-full bg-slate-950 text-slate-100 font-sans antialiased overflow-hidden select-none">
+      
+      {/* MOBILE SHOWROOM CONTAINER */}
       <div className="w-full h-full flex flex-col bg-brand-navy-dark overflow-hidden">
         
         {/* ANDROID TOP STATUS BAR (Shown on Home only) */}
@@ -127,7 +125,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <div className="h-6 bg-slate-950/95 px-4 flex items-center justify-between text-[11px] font-mono text-slate-400 border-b border-white/5 flex-shrink-0 z-30">
             <div className="flex items-center gap-2">
               <span className="font-bold text-slate-200">10:24</span>
-              <span className="text-[10px] text-amber-400/90 font-bold tracking-wider">LANDSCAPE SHOWROOM</span>
+              <span className="text-[10px] text-amber-400/90 font-bold tracking-wider">SHOWROOM</span>
             </div>
 
             {/* Front Camera Punch-hole indicator */}
@@ -148,7 +146,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        {/* ANDROID APP ACTION BAR (Shown on Home only, hidden in subcategories) */}
+        {/* APP ACTION BAR (Shown on Home only, hidden in subcategories) */}
         {showroomScreenMode === 'home' && (
           <header className="bg-brand-navy-card/95 backdrop-blur-md border-b border-brand-navy-border px-3 py-1.5 flex items-center justify-between gap-3 flex-shrink-0 z-20">
             {/* Brand Logo & Name */}
@@ -159,25 +157,17 @@ function AppShell({ children }: { children: React.ReactNode }) {
               <h1 className="text-sm font-black tracking-wider text-white">SHIVAM</h1>
             </Link>
 
-            {/* Right Header Utilities: Rotate toggle, Admin, Customer ID, Order Slip Button */}
+            {/* Right Header Utilities: Admin Web Link, Customer ID, Order Slip Button */}
             <div className="flex items-center gap-1.5 sm:gap-2">
               
-              {/* Instant Landscape Rotate 90deg Toggle */}
-              <button
-                onClick={() => setForceRotateLandscape(!forceRotateLandscape)}
-                className="text-[11px] font-bold text-slate-300 hover:text-white flex items-center gap-1 bg-slate-900 border border-slate-800 hover:border-brand-gold px-2 py-1 rounded-lg transition"
-                title="Rotate screen 90 degrees"
-              >
-                <span>🔄 {forceRotateLandscape ? 'Normal' : 'Rotate 90°'}</span>
-              </button>
-
-              {/* Admin Dashboard */}
+              {/* Web Admin Dashboard Link */}
               <Link 
                 to="/admin" 
-                className="text-[11px] font-bold text-slate-300 hover:text-white flex items-center gap-1 bg-slate-900 border border-slate-800 hover:border-slate-700 px-2 py-1 rounded-lg transition"
+                className="text-[11px] font-bold text-slate-300 hover:text-white flex items-center gap-1 bg-slate-900 border border-slate-800 hover:border-slate-700 px-2.5 py-1 rounded-lg transition"
+                title="Open Web Admin Portal"
               >
                 <ShieldAlert size={13} className="text-amber-400" />
-                <span className="hidden sm:inline">Admin</span>
+                <span>Admin</span>
               </Link>
 
               {/* Customer Switcher / Login */}
@@ -207,7 +197,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </header>
         )}
 
-        {/* MAIN HORIZONTAL LANDSCAPE CONTENT AREA */}
+        {/* MAIN SHOWROOM CONTENT AREA */}
         <main className="flex-1 w-full p-2 overflow-hidden flex flex-col">
           {children}
         </main>

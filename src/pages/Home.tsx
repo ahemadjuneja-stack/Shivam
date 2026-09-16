@@ -260,40 +260,32 @@ export function Home() {
           </div>
         </div>
 
-        {/* RIGHT: COMPACT CATEGORY THUMBNAIL IMAGES (~36% WIDTH) */}
-        <div className="w-[36%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-3 overflow-y-auto scrollbar-thin shadow-2xl flex flex-col justify-center gap-3">
+        {/* RIGHT: CATEGORY THUMBNAILS SIDEBAR (BALANCED SIZE, SMOOTH SCROLL) */}
+        <div className="w-[35%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-2.5 shadow-2xl flex flex-col gap-2.5 overflow-y-auto scroll-smooth select-none">
           {categories.map(cat => {
-            const count = subCategories.filter(s => s.categoryId === cat.id).length;
-
             return (
               <button
                 key={cat.id}
                 onClick={() => handleSelectCategory(cat.id)}
-                className="group relative w-full aspect-video max-h-[140px] rounded-xl overflow-hidden bg-slate-950 border-2 border-slate-800 hover:border-brand-gold transition-all duration-300 hover:scale-[1.02] active:scale-95 shadow-xl flex items-end text-left"
+                className="group w-full flex-shrink-0 flex flex-col gap-1.5 p-1.5 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-all duration-200 hover:scale-[1.01] active:scale-[0.98] text-center focus:outline-none shadow-md"
               >
-                {/* Strict 16:9 Category Thumbnail Image */}
-                <img
-                  src={cat.thumbnailUrl}
-                  alt={cat.displayName}
-                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
+                {/* 1. Strict 16:9 Category Thumbnail Image (Natural balanced ratio, neither too small nor oversized) */}
+                <div className="w-full aspect-video rounded-lg overflow-hidden bg-black border border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center">
+                  <img
+                    src={cat.thumbnailUrl}
+                    alt={cat.displayName}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                </div>
 
-                {/* Subtle Gradient Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
-
-                {/* Minimalist Title on Thumbnail */}
-                <div className="relative z-10 p-3 flex items-center justify-between w-full">
-                  <div className="flex items-center gap-2">
-                    <span 
-                      className="w-2.5 h-2.5 rounded-full shadow" 
-                      style={{ backgroundColor: cat.accentColorHex }} 
-                    />
-                    <span className="text-sm font-black text-white group-hover:text-brand-gold tracking-wide">
-                      {cat.displayName}
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold text-slate-300 bg-black/60 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/15">
-                    {count} Folders
+                {/* 2. Category Name BELOW the Thumbnail (No folder count!) */}
+                <div className="flex items-center justify-center gap-1.5 py-0.5 px-1 flex-shrink-0">
+                  <span 
+                    className="w-2 h-2 rounded-full shadow flex-shrink-0" 
+                    style={{ backgroundColor: cat.accentColorHex }} 
+                  />
+                  <span className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-brand-gold tracking-wide truncate">
+                    {cat.displayName}
                   </span>
                 </div>
               </button>
