@@ -79,9 +79,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-6 py-3 flex items-center justify-between shadow-xl">
           <div className="flex items-center gap-4">
             <Link to="/" className="flex items-center gap-2 group">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center font-black text-black text-sm shadow-md group-hover:scale-105 transition-transform">
-                S
-              </div>
+              <img src="/icon.svg" alt="SHIVAM" className="w-8 h-8 rounded-lg shadow-md group-hover:scale-105 transition-transform" />
               <div>
                 <h1 className="text-base font-black tracking-wider text-white flex items-center gap-2">
                   <span>SHIVAM</span>
@@ -154,9 +152,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <header className="bg-brand-navy-card/95 backdrop-blur-md border-b border-brand-navy-border px-3 py-1.5 flex items-center justify-between gap-3 flex-shrink-0 z-20">
             {/* Brand Logo & Name */}
             <Link to="/" className="flex items-center gap-2 group">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center font-black text-black text-sm shadow-md group-hover:scale-105 transition-transform">
-                S
-              </div>
+              <img src="/icon.svg" alt="SHIVAM" className="w-7 h-7 rounded-lg shadow-md group-hover:scale-105 transition-transform" />
               <h1 className="text-sm font-black tracking-wider text-white">SHIVAM</h1>
             </Link>
 

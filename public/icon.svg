@@ -1,29 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0F172A" />
-      <stop offset="100%" stop-color="#020617" />
-    </linearGradient>
-    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FDE68A" />
-      <stop offset="50%" stop-color="#F59E0B" />
-      <stop offset="100%" stop-color="#D97706" />
-    </linearGradient>
-  </defs>
+  <!-- Outer squircle background: Vibrant Red -->
+  <rect x="22" y="22" width="468" height="468" rx="104" ry="104" fill="#FF0000" />
   
-  <!-- Background with rounded squircle -->
-  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
-  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="url(#goldGrad)" stroke-width="8" opacity="0.4" />
-  
-  <!-- Outer Gold Ring -->
-  <circle cx="256" cy="220" r="140" fill="none" stroke="url(#goldGrad)" stroke-width="12" />
-  <circle cx="256" cy="220" r="120" fill="#0A0F1D" />
-
-  <!-- Monogram S -->
-  <path d="M 290 140 C 240 130, 210 160, 210 190 C 210 240, 305 220, 305 260 C 305 285, 275 300, 230 290" 
-        fill="none" stroke="url(#goldGrad)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" />
-
-  <!-- Text SHIVAM -->
-  <text x="256" y="420" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="46" fill="url(#goldGrad)" letter-spacing="8">SHIVAM</text>
-  <text x="256" y="455" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="18" fill="#94A3B8" letter-spacing="5">WHOLESALE B2B</text>
+  <!-- Stylized Cursive Signature 'S' in Crisp White -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="38" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Upward diagonal to top-right loop apex -->
+    <path d="M 143 276 C 169 195, 241 113, 328 102" />
+    <!-- Top loop clockwise curl -->
+    <path d="M 328 102 C 358 113, 358 159, 333 184" />
+    <!-- Lower body to bottom belly -->
+    <path d="M 143 276 C 133 323, 164 379, 225 389" />
+    <!-- Bottom tail sweeping up-right -->
+    <path d="M 225 389 C 266 389, 297 338, 302 266" />
+  </g>
 </svg>
