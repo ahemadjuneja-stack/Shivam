@@ -1,13 +1,31 @@
-{
-  "type": "service_account",
-  "project_id": "shivam-2bace",
-  "private_key_id": "e5695d5074386b8eb9f4742c6918b40c595262c3",
-  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDAaafuiuMaRP+l\n2B+8LZ4Ohkdm8ME9DzmcZJKSmgAuoPsZZh0NpIhyF0uqXina5W3fIoz/SCOBiPYQ\nBRLx9vdpN/F1atiRbzR6JkBLt/LqSzIPqtGevOBzP/2Zvkb+AcYWIqAPzDqwmqyP\nNEEDrjhjYil0ze0E9k0zkCl07fH4zjYGfzvfGWxcN8x3B0rUZxUxq430wkt5NNKL\n2ZmZ8FFEMz9ionL0Qm0Qz4lXxvttidTIzzwbis3vYO1QWTp4VIQR7vTMOnjwud0t\nn/++a2dcYahmiOBbwLeS4g5IPDHYwl7Xu3E1t4xupb/EjLbsdgFgujZG15SKnDVC\nHPvaqIeDAgMBAAECggEAFE2RyMai/BdNGoTZpGjz2qMp+Z9sjzLXaLyRXXgejiJd\nHJWnzyljXxaSMgye7K105ddResZz6KvjuwEDZMDN49kMA3seFbU0Rlyu6s54NWdw\nhYgIInCFBo7kBaBhq//SlRdbkw8ryjgn/ocMV9ppsiLzg5MPGuJFIdcTviDgKC6l\nystbo/Bc9kG5mflPD+xki0ur8HX54jWMfYkOf54A1eOWhcFTN8er9koltlaec3Fp\n2tLtUPHRqxgwtmAfjUX47OtHo5axUCic8joWcZ15sCep3o0/0VZLTa5TRGKuWGRW\nz+1VzcT+tSkyNqCIY0WolbnraoUZTr5VCddkh0K7IQKBgQD1bOJXStkfli0eDbqG\ngt1vXNDfND+XInAldpgGZxKvqLBPp5hytxdm87QofpXcpLD3JJWO+el5i3y/OxfP\nfe8mS2MXgzBEEjsP3dzHVCnE+r9vyvAF+fT2WOg101dWCqliFeUQHzcSdnTAfpI7\nYar2Fi81L+gKrv+inW3K7Wfc2QKBgQDItAbTYP3nSxzTcRCb/vr7s+yBPPjhsWM3\nOSHWAXatL6WFlXuKLk2CuMGYKWmbY4sA3/6jSf0KXgwq+ia3p6OAd3DrH334Gfm9\nI95xEL86qtUPVfWop+f24WpGU/LmGyVuOTTctzv5KWGQl7Bua390y0CaTt1uH72A\n183g8O69uwKBgBh+tpR5zvPdHEGsoxo7w3gS7nHomBQwhrrmfEPfU7kegAJjOs7w\nQTCwUCHeiHyOH297QkYT4V6VMm0vq6+05QKQcaJuIIoau7RYs2ldmBGl6SdyPMSL\n7wwLUZnVrxjSVZeJkeQrCWcZVYvE1jmBBPwsuKd5UZKHZtJHHicrzLr5AoGAFSiN\nc6lM+x47CrtnsdpeoTxlmXZREpH90KuQOpxq43UbcQrCPF4HQ9mwZxcuj/gdhlkW\n4iYBrB8gD0PR4xikLv3ohJEMWaR7ZIosgCTw1AGAdp5sSHxzAt7esk1VVRbViloz\njXUvuGO5amHjcrCYfjqTM/FOfLaR5sxZYvZjZNMCgYATvzJ5YddsiQGcPQqwFql5\nnL4G93LjPhNg1A7O47BR3ZpOcHjg49Uf10QUauBeL9DI+FWLbtzSMZ+C+3yj+YK5\nCSDqbtdxHS9N8TdEl6CdSti08Xz3OHyXhyLxQ2E4c1oP4I6TR//VojGs73mGId/Y\nPTTwSsMW4EI8o9scqUQuwg==\n-----END PRIVATE KEY-----\n",
-  "client_email": "firebase-adminsdk-fbsvc@shivam-2bace.iam.gserviceaccount.com",
-  "client_id": "116170346745259695525",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40shivam-2bace.iam.gserviceaccount.com",
-  "universe_domain": "googleapis.com"
-}
+name: Deploy to Firebase Hosting on Push
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install Dependencies
+        run: npm ci || npm install
+
+      - name: Build Project
+        run: npm run build
+
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live
+          projectId: shivam-2bace
