@@ -17,10 +17,12 @@ import {
   Plus,
   Mic,
   Square,
-  MessageCircle
+  MessageCircle,
+  Cloud
 } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { ChatModal } from './components/ChatModal';
+import { useFirebaseSync } from './useFirebaseSync';
 
 
 function VoiceRecorder() {
@@ -143,6 +145,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith('/admin');
 
+  // Activate real-time multi-device cloud synchronization via Firebase Firestore
+  const { isFirebaseConnected } = useFirebaseSync();
+
   const cart = useAppStore(state => state.cart);
   const removeFromCart = useAppStore(state => state.removeFromCart);
   const updateCartItemQuantity = useAppStore(state => state.updateCartItemQuantity);
@@ -199,6 +204,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Real-time Firebase Sync indicator */}
+            <div 
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition ${
+                isFirebaseConnected 
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                  : 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse'
+              }`}
+              title={isFirebaseConnected ? 'Firebase Cloud Live Database Synced' : 'Connecting to Firebase...'}
+            >
+              <Cloud size={13} />
+              <span>{isFirebaseConnected ? 'Cloud Synced' : 'Connecting...'}</span>
+            </div>
+
             {/* Direct Switch to Mobile Showroom */}
             <Link
               to="/"
@@ -241,9 +259,22 @@ function AppShell({ children }: { children: React.ReactNode }) {
               <h1 className="text-sm font-black tracking-wider text-white">SHIVAM</h1>
             </Link>
 
-            {/* Right Header Utilities: Install App, Customer ID, Order Slip Button */}
+            {/* Right Header Utilities: Cloud Sync Status, Communicate, Customer ID, Order Slip Button */}
             <div className="flex items-center gap-1.5 sm:gap-2">
               
+              {/* Cloud Sync Pulse Dot */}
+              <div 
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border transition ${
+                  isFirebaseConnected 
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                    : 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse'
+                }`}
+                title={isFirebaseConnected ? 'Firebase Live Connected' : 'Syncing...'}
+              >
+                <Cloud size={11} />
+                <span className="hidden xs:inline text-[9px]">{isFirebaseConnected ? 'Live' : '...'}</span>
+              </div>
+
               {/* Communicate / Chat Button */}
               {currentCustomer && (
                 <button

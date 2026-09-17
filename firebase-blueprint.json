@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "CatalogPhoto": {
+      "title": "CatalogPhoto",
+      "description": "Showcase 16:9 catalog photo with multiple orderable options (A, B, C, D)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "subCategoryId": { "type": "string" },
+        "subCategoryName": { "type": "string" },
+        "photoCode": { "type": "string" },
+        "imageUri": { "type": "string" },
+        "videoUri": { "type": "string" },
+        "itemCount": { "type": "number" },
+        "aAvailable": { "type": "boolean" },
+        "bAvailable": { "type": "boolean" },
+        "cAvailable": { "type": "boolean" },
+        "dAvailable": { "type": "boolean" },
+        "defaultQuantity": { "type": "number" },
+        "sortOrder": { "type": "number" },
+        "description": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "categoryId", "subCategoryId", "photoCode", "imageUri"]
+    },
+    "WholesaleOrder": {
+      "title": "WholesaleOrder",
+      "description": "B2B wholesale order placed by a customer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderNumber": { "type": "string" },
+        "customerCode": { "type": "string" },
+        "shopName": { "type": "string" },
+        "cityName": { "type": "string" },
+        "mobileNumber": { "type": "string" },
+        "totalItemsCount": { "type": "number" },
+        "imitationStatus": { "type": "string" },
+        "cosmeticsStatus": { "type": "string" },
+        "hairStatus": { "type": "string" },
+        "overallStatus": { "type": "string" },
+        "notes": { "type": "string" },
+        "voiceNoteUri": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "orderNumber", "customerCode", "shopName"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Registered wholesale B2B client",
+      "type": "object",
+      "properties": {
+        "customerCode": { "type": "string" },
+        "shopName": { "type": "string" },
+        "cityName": { "type": "string" },
+        "mobileNumber": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "address": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["customerCode", "shopName"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Direct communication between customer and showroom admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerCode": { "type": "string" },
+        "sender": { "type": "string" },
+        "text": { "type": "string" },
+        "imageUri": { "type": "string" },
+        "audioUri": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "customerCode", "sender", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/catalog_photos/{photoId}": {
+      "schema": { "$ref": "#/entities/CatalogPhoto" },
+      "description": "Collection of catalog photos"
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/WholesaleOrder" },
+      "description": "Collection of wholesale orders"
+    },
+    "/customers/{customerCode}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Collection of customer accounts"
+    },
+    "/chat_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Collection of customer chat messages"
+    }
+  }
+}

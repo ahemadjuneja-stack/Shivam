@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // SHIVAM Wholesale B2B showroom & admin catalog rules
+    // Allow read/write for all users of the showroom app and admin dashboard
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

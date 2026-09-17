@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { MainCategory, CategoryItem, SubCategory, CatalogPhoto, Customer, OrderCartItem, WholesaleOrder, ChatMessage } from '../types';
+import { 
+  syncPhotoToFirebase, 
+  deletePhotoFromFirebase, 
+  syncCustomerToFirebase, 
+  syncOrderToFirebase, 
+  updateOrderStatusInFirebase, 
+  syncMessageToFirebase 
+} from '../firebase';
 
 interface AppState {
   // Catalog Data
@@ -52,7 +60,7 @@ interface AppState {
   resetToDefaults: () => void;
 }
 
-const defaultCategories: CategoryItem[] = [
+export const defaultCategories: CategoryItem[] = [
   { 
     id: MainCategory.COSMETICS, 
     displayName: 'Cosmetics', 
@@ -76,7 +84,7 @@ const defaultCategories: CategoryItem[] = [
   }
 ];
 
-const defaultSubCategories: SubCategory[] = [
+export const defaultSubCategories: SubCategory[] = [
   // Imitation
   { id: 'sub-earrings', categoryId: MainCategory.IMITATION, name: 'Earrings & Jhumkas', iconName: 'sparkles', thumbnailUrl: 'https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&q=80&w=600', photoCount: 3, sortOrder: 1 },
   { id: 'sub-bangles', categoryId: MainCategory.IMITATION, name: 'Bangles & Kadas', iconName: 'circle', thumbnailUrl: 'https://images.unsplash.com/photo-1611591475806-03f13f1737be?auto=format&fit=crop&q=80&w=600', photoCount: 2, sortOrder: 2 },
@@ -92,7 +100,7 @@ const defaultSubCategories: SubCategory[] = [
   { id: 'sub-scrunchies', categoryId: MainCategory.HAIR_ACCESSORIES, name: 'Silk Scrunchies & Bands', iconName: 'circle-dot', thumbnailUrl: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&q=80&w=600', photoCount: 1, sortOrder: 2 }
 ];
 
-const defaultPhotos: CatalogPhoto[] = [
+export const defaultPhotos: CatalogPhoto[] = [
   // Imitation - Earrings
   {
     id: 'p-er-101',
@@ -101,7 +109,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Earrings & Jhumkas',
     photoCode: 'ER-101',
     imageUri: 'https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    videoUri: 'https://media.w3.org/2010/05/bunny/trailer.mp4',
     itemCount: 4,
     aAvailable: true,
     bAvailable: true,
@@ -118,7 +126,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Earrings & Jhumkas',
     photoCode: 'ER-102',
     imageUri: 'https://images.unsplash.com/photo-1630019852942-f89202989a59?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    videoUri: 'https://media.w3.org/2010/05/sintel/trailer.mp4',
     itemCount: 4,
     aAvailable: true,
     bAvailable: true,
@@ -135,7 +143,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Earrings & Jhumkas',
     photoCode: 'ER-103',
     imageUri: 'https://images.unsplash.com/photo-1617038260897-41a1f14a8ca0?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    videoUri: 'https://vjs.zencdn.net/v/oceans.mp4',
     itemCount: 4,
     aAvailable: true,
     bAvailable: true,
@@ -154,7 +162,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Bangles & Kadas',
     photoCode: 'BG-201',
     imageUri: 'https://images.unsplash.com/photo-1611591475806-03f13f1737be?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    videoUri: 'https://media.w3.org/2010/05/video/movie_300.mp4',
     itemCount: 4,
     aAvailable: true,
     bAvailable: true,
@@ -171,7 +179,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Bangles & Kadas',
     photoCode: 'BG-202',
     imageUri: 'https://images.unsplash.com/photo-1602751584552-8ba73aad10e1?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4',
+    videoUri: 'https://www.w3schools.com/html/mov_bbb.mp4',
     itemCount: 3,
     aAvailable: true,
     bAvailable: true,
@@ -190,7 +198,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Choker & Necklace Sets',
     photoCode: 'NK-301',
     imageUri: 'https://images.unsplash.com/photo-1599643478514-4a410f0a82ef?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4',
+    videoUri: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
     itemCount: 2,
     aAvailable: true,
     bAvailable: true,
@@ -209,7 +217,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Matte & Liquid Lipsticks',
     photoCode: 'LP-101',
     imageUri: 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    videoUri: 'https://media.w3.org/2010/05/bunny/trailer.mp4',
     itemCount: 4,
     aAvailable: true,
     bAvailable: true,
@@ -226,7 +234,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Matte & Liquid Lipsticks',
     photoCode: 'LP-102',
     imageUri: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    videoUri: 'https://media.w3.org/2010/05/sintel/trailer.mp4',
     itemCount: 4,
     aAvailable: true,
     bAvailable: true,
@@ -245,7 +253,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Nail Lacquer & Gel Polish',
     photoCode: 'NP-201',
     imageUri: 'https://images.unsplash.com/photo-1632345031435-8727f6897d53?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    videoUri: 'https://vjs.zencdn.net/v/oceans.mp4',
     itemCount: 4,
     aAvailable: true,
     bAvailable: true,
@@ -264,7 +272,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Kajal & Liquid Liner',
     photoCode: 'EM-301',
     imageUri: 'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
+    videoUri: 'https://media.w3.org/2010/05/video/movie_300.mp4',
     itemCount: 3,
     aAvailable: true,
     bAvailable: true,
@@ -283,7 +291,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Korean Claw Clips',
     photoCode: 'CC-101',
     imageUri: 'https://images.unsplash.com/photo-1606214532675-80277bd28bd9?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    videoUri: 'https://media.w3.org/2010/05/bunny/trailer.mp4',
     itemCount: 4,
     aAvailable: true,
     bAvailable: true,
@@ -300,7 +308,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Korean Claw Clips',
     photoCode: 'CC-102',
     imageUri: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    videoUri: 'https://media.w3.org/2010/05/sintel/trailer.mp4',
     itemCount: 3,
     aAvailable: true,
     bAvailable: true,
@@ -319,7 +327,7 @@ const defaultPhotos: CatalogPhoto[] = [
     subCategoryName: 'Silk Scrunchies & Bands',
     photoCode: 'SC-201',
     imageUri: 'https://images.unsplash.com/photo-1620656798579-1984d9e87dfa?auto=format&fit=crop&w=1280&h=720&q=80',
-    videoUri: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4',
+    videoUri: 'https://www.w3schools.com/html/mov_bbb.mp4',
     itemCount: 4,
     aAvailable: true,
     bAvailable: true,
@@ -331,17 +339,19 @@ const defaultPhotos: CatalogPhoto[] = [
   }
 ];
 
+export const defaultCustomers: Customer[] = [
+  { customerCode: 'CUST-101', shopName: 'Pooja Novelty Store', cityName: 'Mumbai', mobileNumber: '9876543210', contactPerson: 'Rajesh Bhai', address: 'Shop 14, Dadar Market' },
+  { customerCode: 'CUST-102', shopName: 'Shrinath Cosmetics', cityName: 'Ahmedabad', mobileNumber: '9825012345', contactPerson: 'Ketan Patel', address: 'Ratanpole Wholesale Market' },
+  { customerCode: 'CUST-103', shopName: 'Radhe Fashion Jewelry', cityName: 'Surat', mobileNumber: '9712345678', contactPerson: 'Amit Shah', address: 'Bhagal Main Road' }
+];
+
 export const useAppStore = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       categories: defaultCategories,
       subCategories: defaultSubCategories,
       photos: defaultPhotos,
-      customers: [
-        { customerCode: 'CUST-101', shopName: 'Pooja Novelty Store', cityName: 'Mumbai', mobileNumber: '9876543210', contactPerson: 'Rajesh Bhai', address: 'Shop 14, Dadar Market' },
-        { customerCode: 'CUST-102', shopName: 'Shrinath Cosmetics', cityName: 'Ahmedabad', mobileNumber: '9825012345', contactPerson: 'Ketan Patel', address: 'Ratanpole Wholesale Market' },
-        { customerCode: 'CUST-103', shopName: 'Radhe Fashion Jewelry', cityName: 'Surat', mobileNumber: '9712345678', contactPerson: 'Amit Shah', address: 'Bhagal Main Road' }
-      ],
+      customers: defaultCustomers,
       orders: [],
       messages: [],
       
@@ -461,6 +471,9 @@ export const useAppStore = create<AppState>()(
           createdAt: Date.now()
         };
 
+        // Sync new order to Firebase Firestore in real-time
+        syncOrderToFirebase(newOrder).catch((e) => console.error('Firebase sync error for new order:', e));
+
         return {
           orders: [newOrder, ...state.orders],
           cart: [],
@@ -470,59 +483,98 @@ export const useAppStore = create<AppState>()(
         };
       }),
 
-      addMessage: (message) => set((state) => ({
-        messages: [...state.messages, message]
-      })),
+      addMessage: (message) => {
+        syncMessageToFirebase(message).catch((e) => console.error('Firebase sync error for message:', e));
+        set((state) => ({
+          messages: [...state.messages, message]
+        }));
+      },
 
-      addCustomer: (customer) => set((state) => ({ customers: [...state.customers, customer] })),
+      addCustomer: (customer) => {
+        syncCustomerToFirebase(customer).catch((e) => console.error('Firebase sync error for customer:', e));
+        set((state) => ({ customers: [...state.customers, customer] }));
+      },
 
-      updateCustomer: (customerCode, data) => set((state) => ({
-        customers: state.customers.map(c => c.customerCode === customerCode ? { ...c, ...data } : c)
-      })),
+      updateCustomer: (customerCode, data) => {
+        const customer = get().customers.find(c => c.customerCode === customerCode);
+        if (customer) {
+          const updated = { ...customer, ...data };
+          syncCustomerToFirebase(updated).catch((e) => console.error('Firebase sync error on customer update:', e));
+        }
+        set((state) => ({
+          customers: state.customers.map(c => c.customerCode === customerCode ? { ...c, ...data } : c)
+        }));
+      },
       
-      updateOrderStatus: (orderId, department, status) => set((state) => {
-        const newOrders = state.orders.map(order => {
-          if (order.id !== orderId) return order;
-          const updated = { ...order };
-          if (department === 'imitation') updated.imitationStatus = status;
-          if (department === 'cosmetics') updated.cosmeticsStatus = status;
-          if (department === 'hair') updated.hairStatus = status;
-          
-          const statuses = [updated.imitationStatus, updated.cosmeticsStatus, updated.hairStatus].filter(s => s !== 'NOT_APPLICABLE');
-          if (statuses.every(s => s === 'DONE')) {
-            updated.overallStatus = 'READY_TO_SHIP';
-          } else if (statuses.some(s => s === 'DONE')) {
-            updated.overallStatus = 'PARTIALLY_PACKED';
-          } else {
-            updated.overallStatus = 'RECEIVED';
-          }
-          return updated;
+      updateOrderStatus: (orderId, department, status) => {
+        let updatedOrderToSync: WholesaleOrder | null = null;
+        set((state) => {
+          const newOrders = state.orders.map(order => {
+            if (order.id !== orderId) return order;
+            const updated = { ...order };
+            if (department === 'imitation') updated.imitationStatus = status;
+            if (department === 'cosmetics') updated.cosmeticsStatus = status;
+            if (department === 'hair') updated.hairStatus = status;
+            
+            const statuses = [updated.imitationStatus, updated.cosmeticsStatus, updated.hairStatus].filter(s => s !== 'NOT_APPLICABLE');
+            if (statuses.every(s => s === 'DONE')) {
+              updated.overallStatus = 'READY_TO_SHIP';
+            } else if (statuses.some(s => s === 'DONE')) {
+              updated.overallStatus = 'PARTIALLY_PACKED';
+            } else {
+              updated.overallStatus = 'RECEIVED';
+            }
+            updatedOrderToSync = updated;
+            return updated;
+          });
+          return { orders: newOrders };
         });
-        return { orders: newOrders };
-      }),
 
-      addPhoto: (photo) => set((state) => ({ photos: [...state.photos, photo] })),
+        if (updatedOrderToSync) {
+          updateOrderStatusInFirebase(orderId, updatedOrderToSync).catch((e) => 
+            console.error('Firebase order status update error:', e)
+          );
+        }
+      },
 
-      updatePhoto: (photoId, data) => set((state) => ({
-        photos: state.photos.map(p => p.id === photoId ? { ...p, ...data } : p)
-      })),
+      addPhoto: (photo) => {
+        syncPhotoToFirebase(photo).catch((e) => console.error('Firebase sync error on addPhoto:', e));
+        set((state) => ({ photos: [...state.photos, photo] }));
+      },
 
-      deletePhoto: (photoId) => set((state) => ({
-        photos: state.photos.filter(p => p.id !== photoId)
-      })),
+      updatePhoto: (photoId, data) => {
+        const targetPhoto = get().photos.find(p => p.id === photoId);
+        if (targetPhoto) {
+          const updated = { ...targetPhoto, ...data };
+          syncPhotoToFirebase(updated).catch((e) => console.error('Firebase sync error on updatePhoto:', e));
+        }
+        set((state) => ({
+          photos: state.photos.map(p => p.id === photoId ? { ...p, ...data } : p)
+        }));
+      },
 
-      resetToDefaults: () => set({
-        categories: defaultCategories,
-        subCategories: defaultSubCategories,
-        photos: defaultPhotos,
-        activeCategoryId: MainCategory.IMITATION,
-        activeSubCategoryId: 'sub-earrings',
-        activePhotoId: 'p-er-101'
-      })
+      deletePhoto: (photoId) => {
+        deletePhotoFromFirebase(photoId).catch((e) => console.error('Firebase sync error on deletePhoto:', e));
+        set((state) => ({
+          photos: state.photos.filter(p => p.id !== photoId)
+        }));
+      },
+
+      resetToDefaults: () => {
+        defaultPhotos.forEach(p => syncPhotoToFirebase(p));
+        set({
+          categories: defaultCategories,
+          subCategories: defaultSubCategories,
+          photos: defaultPhotos,
+          activeCategoryId: MainCategory.IMITATION,
+          activeSubCategoryId: 'sub-earrings',
+          activePhotoId: 'p-er-101'
+        });
+      }
     }),
     {
-      name: 'shivam-wholesale-clean-v4',
-      version: 4,
+      name: 'shivam-wholesale-clean-v5',
+      version: 5,
     }
   )
 );

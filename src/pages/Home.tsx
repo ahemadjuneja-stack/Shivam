@@ -5,12 +5,11 @@ import {
   Minus, 
   ArrowLeft, 
   Check,
-  ShoppingBag,
-  X,
-  Play
+  ShoppingBag
 } from 'lucide-react';
 import { CatalogPhoto } from '../types';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { HomeVideoSlider } from '../components/HomeVideoSlider';
 
 export function Home() {
   const categories = useAppStore(state => state.categories);
@@ -38,9 +37,7 @@ export function Home() {
   const activePhotoIndex = selectedPhoto ? galleryPhotos.findIndex(p => p.id === selectedPhoto.id) : 0;
 
   // Video slide reel (all photos with videos in 16:9 HDTV)
-  const allVideoList = photos.filter(p => !!p.videoUri);
-  const videoList = allVideoList.slice(0, 5); // Limit to 4-5 videos
-  const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
+  const videoList = photos.filter(p => !!p.videoUri);
 
   const [isZoomedIn, setIsZoomedIn] = useState(false);
 
@@ -200,53 +197,18 @@ export function Home() {
      ----------------------------------------------------------------------------------- */
   if (screenMode === 'home') {
     return (
-      <div className="w-full h-full flex flex-row gap-3 overflow-hidden select-none">
+      <div className="w-full h-full flex flex-col landscape:flex-row gap-3 overflow-hidden select-none">
         
-        {/* LEFT: VERTICAL SCROLLING VIDEO SLIDE */}
-        <div className="w-[60%] landscape:w-[65%] h-full flex-shrink-0 bg-black/40 rounded-2xl border border-slate-800/80 p-2 overflow-hidden shadow-2xl relative">
-          {playingVideoId ? (
-            /* Active Video Player */
-            <div className="w-full h-full rounded-xl overflow-hidden bg-black relative border border-slate-800 shadow-xl flex items-center justify-center">
-              <video
-                src={videoList.find(v => v.id === playingVideoId)?.videoUri}
-                autoPlay
-                controls
-                className="w-full h-full object-contain"
-                onEnded={() => setPlayingVideoId(null)}
-              />
-              <button
-                onClick={() => setPlayingVideoId(null)}
-                className="absolute top-2 right-2 bg-black/60 text-white p-2 rounded-full backdrop-blur-md hover:bg-black transition z-10"
-                title="Close Video"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ) : (
-            /* Horizontal Sliding Thumbnails (One by One) */
-            <div className="w-full h-full flex flex-col justify-center relative">
-              <div className="flex w-full overflow-x-auto snap-x snap-mandatory scrollbar-none items-center gap-3 px-3 pb-2 pt-2">
-                {videoList.map((photo) => (
-                  <div 
-                    key={photo.id}
-                    onClick={() => setPlayingVideoId(photo.id)}
-                    className="w-full min-w-[92%] flex-shrink-0 snap-center aspect-video rounded-xl bg-slate-900 border-2 border-slate-800 hover:border-brand-gold overflow-hidden cursor-pointer relative group transition-colors shadow-2xl"
-                  >
-                    <img src={photo.imageUri} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
-                    <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition flex items-center justify-center">
-                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/50 backdrop-blur-sm border border-white/30 flex items-center justify-center group-hover:scale-110 group-hover:bg-brand-gold/90 transition-all duration-300 shadow-lg">
-                        <Play size={26} className="text-white group-hover:text-black ml-1" fill="currentColor" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+        {/* MULTIPLE VIDEO SLIDER (Touch/Finger Swiping, Muted by Default with Unmute Option, Instant Autoplay) */}
+        <div className="w-full h-[45%] landscape:w-[65%] landscape:h-full flex-shrink-0">
+          <HomeVideoSlider 
+            videos={videoList} 
+            onSelectPhoto={handleOpenFullImage} 
+          />
         </div>
 
-        {/* RIGHT: CATEGORY GRID */}
-        <div className="flex-1 w-[40%] landscape:w-[35%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-3 sm:p-4 shadow-2xl overflow-y-auto scroll-smooth scrollbar-thin">
+        {/* RIGHT/BOTTOM: CATEGORY GRID */}
+        <div className="flex-1 w-full landscape:w-[35%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-3 sm:p-4 shadow-2xl overflow-y-auto scroll-smooth scrollbar-thin">
           <div className="flex flex-col gap-4 pb-4">
             {categories.map(cat => (
               <button
