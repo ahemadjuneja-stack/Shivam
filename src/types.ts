@@ -63,7 +63,7 @@ export interface ProductVariant {
 }
 
 export function getPhotoVariants(photo: CatalogPhoto): ProductVariant[] {
-  const baseDefaultQty = typeof photo.defaultQuantity === 'number' && photo.defaultQuantity > 0 
+  const baseDefaultQty = typeof photo.defaultQuantity === 'number' && photo.defaultQuantity >= 0 
     ? photo.defaultQuantity 
     : 6;
   
@@ -76,7 +76,7 @@ export function getPhotoVariants(photo: CatalogPhoto): ProductVariant[] {
         key: v.key || defaultKey,
         label: v.label || v.name || defaultKey,
         isAvailable: v.isAvailable !== undefined ? v.isAvailable : true,
-        defaultQuantity: typeof v.defaultQuantity === 'number' && v.defaultQuantity > 0 
+        defaultQuantity: typeof v.defaultQuantity === 'number' && v.defaultQuantity >= 0 
           ? v.defaultQuantity 
           : baseDefaultQty
       };
@@ -96,7 +96,7 @@ export function getPhotoVariants(photo: CatalogPhoto): ProductVariant[] {
 
     const isAvailable = photo[isAvailKey] !== undefined ? !!photo[isAvailKey] : true;
     const label = (photo[labelKey] as string) || opt;
-    const defaultQuantity = typeof photo[qtyKey] === 'number' && (photo[qtyKey] as number) > 0 
+    const defaultQuantity = typeof photo[qtyKey] === 'number' && (photo[qtyKey] as number) >= 0 
       ? (photo[qtyKey] as number) 
       : baseDefaultQty;
 

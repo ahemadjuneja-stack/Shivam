@@ -12,10 +12,16 @@
   --color-brand-hair: #38BDF8;
 
   --animate-marquee-vertical: marquee-vertical 50s linear infinite;
+  --animate-slow-blink: slowBlink 2s ease-in-out infinite;
   
   @keyframes marquee-vertical {
     0% { transform: translateY(0); }
     100% { transform: translateY(-33.33%); }
+  }
+
+  @keyframes slowBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
   }
 }
 

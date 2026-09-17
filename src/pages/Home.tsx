@@ -550,16 +550,23 @@ export function Home() {
               const minQty = variant.defaultQuantity;
               const badge = letterBadgeColors[variant.key] || { bg: 'bg-indigo-600', text: 'text-white' };
 
-              if (!isAvailable) {
+              if (!isAvailable || minQty === 0) {
                 return (
                   <div 
                     key={variant.key} 
-                    className="flex flex-wrap items-center justify-between p-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80 opacity-40 gap-1.5"
+                    className="flex flex-wrap items-center justify-between p-1.5 rounded-xl bg-slate-950 border border-slate-800 transition shadow-sm gap-1.5 pointer-events-none w-full"
                   >
-                    <div className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-500 font-black text-xs flex items-center justify-center whitespace-nowrap">
+                    {/* Left Label Box (Variant Name): reddish tint with bold RED text */}
+                    <div className="min-w-fit px-3 py-1.5 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center bg-red-950/30 border border-red-900/30 text-red-500 whitespace-nowrap">
                       {variant.label}
                     </div>
-                    <span className="text-[10px] text-slate-500 font-mono font-bold px-2">OUT</span>
+
+                    {/* Right Control Area: Out of Stock bright red bold pill with slow blink animation */}
+                    <div className="flex-1 flex items-center justify-center px-3 py-1.5 bg-red-950/25 border border-red-900/40 rounded-lg animate-slow-blink">
+                      <span className="text-xs font-black text-red-500 whitespace-nowrap">
+                        Out of Stock
+                      </span>
+                    </div>
                   </div>
                 );
               }
@@ -577,10 +584,10 @@ export function Home() {
                       }
                     }}
                     disabled={currentQty === 0}
-                    className={`min-w-fit px-3 py-1.5 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center shadow transition active:scale-95 whitespace-nowrap ${
+                    className={`min-w-fit px-3 py-1.5 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center shadow transition active:scale-95 whitespace-nowrap ${
                       currentQty > 0 
-                        ? `${badge.bg} ${badge.text} cursor-pointer` 
-                        : 'bg-slate-800 text-slate-400 opacity-60 cursor-default'
+                        ? `${badge.bg} ${badge.text} cursor-pointer font-black` 
+                        : 'bg-[#1e293b] text-white border border-[#334155] cursor-default'
                     }`}
                     title={currentQty > 0 ? `Tap to Clear (${variant.label})` : `${variant.label} (Pack: ${minQty} pcs)`}
                   >
