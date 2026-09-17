@@ -161,8 +161,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const totalPieces = cart.reduce((sum, item) => sum + item.quantity, 0);
-
   // ---------------------------------------------------------------------------
   // 1. PC WEB ADMIN DASHBOARD LAYOUT (Full Screen, Desktop Friendly)
   // ---------------------------------------------------------------------------
@@ -258,10 +256,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
               {/* Top Order Slip / Cart Button */}
               <button 
                 onClick={() => setIsCartOpen(true)}
-                className="relative flex items-center gap-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black px-2.5 py-1 rounded-lg font-black text-xs transition shadow-md active:scale-95"
+                className="relative flex items-center justify-center bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black w-7 h-7 rounded-lg transition shadow-md active:scale-95"
               >
-                <ShoppingBag size={13} />
-                <span>{totalPieces} pcs</span>
+                <ShoppingBag size={16} />
               </button>
             </div>
           </header>
