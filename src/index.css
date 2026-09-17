@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+
 @theme {
   --color-brand-gold: #F59E0B;
   --color-brand-gold-light: #FDE68A;
@@ -9,6 +10,13 @@
   --color-brand-imitation: #F59E0B;
   --color-brand-cosmetics: #EC4899;
   --color-brand-hair: #38BDF8;
+
+  --animate-marquee-vertical: marquee-vertical 50s linear infinite;
+  
+  @keyframes marquee-vertical {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-33.33%); }
+  }
 }
 
 body {

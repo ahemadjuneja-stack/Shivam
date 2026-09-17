@@ -49,6 +49,16 @@ export interface Customer {
   address: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  customerCode: string;
+  sender: 'customer' | 'admin';
+  text?: string;
+  imageUri?: string;
+  audioUri?: string;
+  timestamp: number;
+}
+
 export interface OrderCartItem {
   photoId: string;
   photoCode: string;
@@ -73,5 +83,6 @@ export interface WholesaleOrder {
   hairStatus: string;
   overallStatus: string; // RECEIVED, PARTIALLY_PACKED, READY_TO_SHIP, DISPATCHED
   notes: string;
+  voiceNoteUri?: string;
   createdAt: number;
 }

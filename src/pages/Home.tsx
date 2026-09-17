@@ -1,17 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store';
 import { 
-  ChevronLeft, 
-  ChevronRight, 
   Plus, 
   Minus, 
-  Volume2, 
-  VolumeX, 
   ArrowLeft, 
   Check,
-  ShoppingBag
+  ShoppingBag,
+  X,
+  Play
 } from 'lucide-react';
 import { CatalogPhoto } from '../types';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
 export function Home() {
   const categories = useAppStore(state => state.categories);
@@ -30,19 +29,20 @@ export function Home() {
   // Screen modes: 'home' | 'subcategories' | 'gallery' | 'fullimage'
   const [screenMode, setScreenMode] = useState<'home' | 'subcategories' | 'gallery' | 'fullimage'>('home');
   const [selectedPhoto, setSelectedPhoto] = useState<CatalogPhoto | null>(null);
+  const [endOfCategorySuggestion, setEndOfCategorySuggestion] = useState(false);
 
   // Filtered lists
   const currentCategory = categories.find(c => c.id === activeCategoryId) || categories[0];
   const categorySubList = subCategories.filter(s => s.categoryId === activeCategoryId);
   const galleryPhotos = photos.filter(p => p.subCategoryId === activeSubCategoryId);
   const activePhotoIndex = selectedPhoto ? galleryPhotos.findIndex(p => p.id === selectedPhoto.id) : 0;
-  const totalCartPieces = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   // Video slide reel (all photos with videos in 16:9 HDTV)
-  const videoList = photos.filter(p => !!p.videoUri);
-  const [videoSlideIdx, setVideoSlideIdx] = useState(0);
-  const [isVideoMuted, setIsVideoMuted] = useState(true);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const allVideoList = photos.filter(p => !!p.videoUri);
+  const videoList = allVideoList.slice(0, 5); // Limit to 4-5 videos
+  const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
+
+  const [isZoomedIn, setIsZoomedIn] = useState(false);
 
   // Touch & Swipe gesture handling for full image
   const touchStartX = useRef<number | null>(null);
@@ -51,15 +51,18 @@ export function Home() {
   const mouseStartX = useRef<number | null>(null);
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (isZoomedIn) return;
     touchStartX.current = e.touches[0].clientX;
     touchEndX.current = null;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    if (isZoomedIn) return;
     touchEndX.current = e.touches[0].clientX;
   };
 
   const handleTouchEnd = () => {
+    if (isZoomedIn) return;
     if (touchStartX.current !== null && touchEndX.current !== null) {
       const diffX = touchStartX.current - touchEndX.current;
       if (diffX > 35) {
@@ -73,6 +76,7 @@ export function Home() {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (isZoomedIn) return;
     isMouseDown.current = true;
     mouseStartX.current = e.clientX;
   };
@@ -82,6 +86,7 @@ export function Home() {
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
+    if (isZoomedIn) return;
     if (isMouseDown.current && mouseStartX.current !== null) {
       const diffX = mouseStartX.current - e.clientX;
       if (diffX > 40) {
@@ -96,17 +101,6 @@ export function Home() {
 
   // Feedback notification
   const [qtyFeedback, setQtyFeedback] = useState<string | null>(null);
-
-  // Auto-slide video on the left side every 6.5s
-  useEffect(() => {
-    if (videoList.length <= 1) return;
-    const interval = setInterval(() => {
-      setVideoSlideIdx(prev => (prev + 1) % videoList.length);
-    }, 6500);
-    return () => clearInterval(interval);
-  }, [videoList.length]);
-
-  const activeVideoPhoto = videoList[videoSlideIdx] || videoList[0];
 
   // 1. Select category from Home -> opens subcategory view
   const handleSelectCategory = (catId: string) => {
@@ -132,11 +126,19 @@ export function Home() {
   // Next & Prev slide in Full Image mode
   const handleNextPhoto = () => {
     if (galleryPhotos.length === 0) return;
-    const nextIdx = (activePhotoIndex + 1) % galleryPhotos.length;
-    setSelectedPhoto(galleryPhotos[nextIdx]);
+    if (activePhotoIndex === galleryPhotos.length - 1) {
+      setEndOfCategorySuggestion(true);
+    } else {
+      const nextIdx = activePhotoIndex + 1;
+      setSelectedPhoto(galleryPhotos[nextIdx]);
+    }
   };
 
   const handlePrevPhoto = () => {
+    if (endOfCategorySuggestion) {
+      setEndOfCategorySuggestion(false);
+      return;
+    }
     if (galleryPhotos.length === 0) return;
     const prevIdx = (activePhotoIndex - 1 + galleryPhotos.length) % galleryPhotos.length;
     setSelectedPhoto(galleryPhotos[prevIdx]);
@@ -149,8 +151,12 @@ export function Home() {
         if (e.key === 'ArrowRight') handleNextPhoto();
         if (e.key === 'ArrowLeft') handlePrevPhoto();
         if (e.key === 'Escape') {
-          setScreenMode('gallery');
-          setShowroomScreenMode('gallery');
+          if (endOfCategorySuggestion) {
+            setEndOfCategorySuggestion(false);
+          } else {
+            setScreenMode('gallery');
+            setShowroomScreenMode('gallery');
+          }
         }
       } else if (screenMode === 'gallery') {
         if (e.key === 'Escape') {
@@ -166,12 +172,12 @@ export function Home() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  });
+  }, [screenMode, activePhotoIndex, galleryPhotos, endOfCategorySuggestion]);
 
   // Get current quantity for a photo's option letter from cart
-  const getOptionQty = (photoId: string, optionLetter: string, defaultQty: number) => {
+  const getOptionQty = (photoId: string, optionLetter: string) => {
     const item = cart.find(c => c.photoId === photoId && c.optionLetter === optionLetter);
-    return item ? item.quantity : defaultQty;
+    return item ? item.quantity : 0;
   };
 
   // Update quantity directly (No cart button required!)
@@ -190,107 +196,83 @@ export function Home() {
   };
 
   /* -----------------------------------------------------------------------------------
-     VIEW 1: HOME PAGE (LEFT HDTV 16:9 VIDEO SLIDE, RIGHT ONLY CATEGORY THUMBNAILS!)
-     * Category me sirf thumbnail ki image aayegi! No subcategories on Home!
+     VIEW 1: HOME PAGE (LEFT VERTICAL VIDEO SLIDE, RIGHT CATEGORY GRID)
      ----------------------------------------------------------------------------------- */
   if (screenMode === 'home') {
     return (
-      <div className="w-full h-full flex flex-row gap-3 overflow-hidden select-none items-center">
+      <div className="w-full h-full flex flex-row gap-3 overflow-hidden select-none">
         
-        {/* LEFT: HDTV 16:9 VIDEO SLIDE (EXPANDED TO ~64% WIDTH) */}
-        <div className="w-[64%] h-full flex items-center justify-center bg-black/40 rounded-2xl border border-slate-800/80 p-2 overflow-hidden shadow-2xl">
-          <div className="w-full aspect-video max-h-full rounded-xl overflow-hidden bg-black relative border border-slate-800 shadow-xl flex items-center justify-center group">
-            {activeVideoPhoto?.videoUri ? (
-              <>
-                <video
-                  ref={videoRef}
-                  key={activeVideoPhoto.videoUri}
-                  src={activeVideoPhoto.videoUri}
-                  autoPlay
-                  loop
-                  muted={isVideoMuted}
-                  playsInline
-                  className="w-full h-full object-cover"
-                />
-
-                {/* Video Slide Chevrons */}
-                {videoList.length > 1 && (
-                  <>
-                    <button
-                      onClick={() => setVideoSlideIdx(prev => (prev - 1 + videoList.length) % videoList.length)}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition hover:scale-105 active:scale-95 z-10"
-                      title="Previous"
-                    >
-                      <ChevronLeft size={18} />
-                    </button>
-                    <button
-                      onClick={() => setVideoSlideIdx(prev => (prev + 1) % videoList.length)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition hover:scale-105 active:scale-95 z-10"
-                      title="Next"
-                    >
-                      <ChevronRight size={18} />
-                    </button>
-                  </>
-                )}
-
-                {/* Mute/Unmute */}
-                <button
-                  onClick={() => setIsVideoMuted(!isVideoMuted)}
-                  className="absolute bottom-2.5 right-2.5 p-1.5 rounded-lg bg-black/70 hover:bg-black text-white backdrop-blur-md border border-white/20 transition z-10"
-                >
-                  {isVideoMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
-                </button>
-
-                {/* Slide Dots */}
-                {videoList.length > 1 && (
-                  <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/15 flex items-center gap-1.5 z-10">
-                    {videoList.map((_, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setVideoSlideIdx(i)}
-                        className={`h-1.5 rounded-full transition-all ${
-                          i === videoSlideIdx ? 'w-4 bg-brand-gold' : 'w-1.5 bg-white/40'
-                        }`}
-                      />
-                    ))}
+        {/* LEFT: VERTICAL SCROLLING VIDEO SLIDE */}
+        <div className="w-[60%] landscape:w-[65%] h-full flex-shrink-0 bg-black/40 rounded-2xl border border-slate-800/80 p-2 overflow-hidden shadow-2xl relative">
+          {playingVideoId ? (
+            /* Active Video Player */
+            <div className="w-full h-full rounded-xl overflow-hidden bg-black relative border border-slate-800 shadow-xl flex items-center justify-center">
+              <video
+                src={videoList.find(v => v.id === playingVideoId)?.videoUri}
+                autoPlay
+                controls
+                className="w-full h-full object-contain"
+                onEnded={() => setPlayingVideoId(null)}
+              />
+              <button
+                onClick={() => setPlayingVideoId(null)}
+                className="absolute top-2 right-2 bg-black/60 text-white p-2 rounded-full backdrop-blur-md hover:bg-black transition z-10"
+                title="Close Video"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ) : (
+            /* Horizontal Sliding Thumbnails (One by One) */
+            <div className="w-full h-full flex flex-col justify-center relative">
+              <div className="flex w-full overflow-x-auto snap-x snap-mandatory scrollbar-none items-center gap-3 px-3 pb-2 pt-2">
+                {videoList.map((photo) => (
+                  <div 
+                    key={photo.id}
+                    onClick={() => setPlayingVideoId(photo.id)}
+                    className="w-full min-w-[92%] flex-shrink-0 snap-center aspect-video rounded-xl bg-slate-900 border-2 border-slate-800 hover:border-brand-gold overflow-hidden cursor-pointer relative group transition-colors shadow-2xl"
+                  >
+                    <img src={photo.imageUri} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
+                    <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition flex items-center justify-center">
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/50 backdrop-blur-sm border border-white/30 flex items-center justify-center group-hover:scale-110 group-hover:bg-brand-gold/90 transition-all duration-300 shadow-lg">
+                        <Play size={26} className="text-white group-hover:text-black ml-1" fill="currentColor" />
+                      </div>
+                    </div>
                   </div>
-                )}
-              </>
-            ) : null}
-          </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* RIGHT: CATEGORY THUMBNAILS SIDEBAR (BALANCED SIZE, SMOOTH SCROLL) */}
-        <div className="w-[35%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-2.5 shadow-2xl flex flex-col gap-2.5 overflow-y-auto scroll-smooth select-none">
-          {categories.map(cat => {
-            return (
+        {/* RIGHT: CATEGORY GRID */}
+        <div className="flex-1 w-[40%] landscape:w-[35%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-3 sm:p-4 shadow-2xl overflow-y-auto scroll-smooth scrollbar-thin">
+          <div className="flex flex-col gap-4 pb-4">
+            {categories.map(cat => (
               <button
                 key={cat.id}
                 onClick={() => handleSelectCategory(cat.id)}
-                className="group w-full flex-shrink-0 flex flex-col gap-1.5 p-1.5 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-all duration-200 hover:scale-[1.01] active:scale-[0.98] text-center focus:outline-none shadow-md"
+                className="group w-full flex flex-col gap-3 p-3 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-all duration-200 hover:scale-[1.01] active:scale-[0.98] text-center shadow-lg focus:outline-none"
               >
-                {/* 1. Strict 16:9 Category Thumbnail Image (Natural balanced ratio, neither too small nor oversized) */}
-                <div className="w-full aspect-video rounded-lg overflow-hidden bg-black border border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center">
+                <div className="w-full aspect-[16/10] sm:aspect-video rounded-xl overflow-hidden bg-black border-2 border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center">
                   <img
                     src={cat.thumbnailUrl}
                     alt={cat.displayName}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
                 </div>
-
-                {/* 2. Category Name BELOW the Thumbnail (No folder count!) */}
-                <div className="flex items-center justify-center gap-1.5 py-0.5 px-1 flex-shrink-0">
+                <div className="flex items-center justify-center gap-2 py-1.5 flex-shrink-0">
                   <span 
-                    className="w-2 h-2 rounded-full shadow flex-shrink-0" 
+                    className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full shadow" 
                     style={{ backgroundColor: cat.accentColorHex }} 
                   />
-                  <span className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-brand-gold tracking-wide truncate">
+                  <span className="text-sm sm:text-base font-black text-slate-200 group-hover:text-brand-gold tracking-wide truncate">
                     {cat.displayName}
                   </span>
                 </div>
               </button>
-            );
-          })}
+            ))}
+          </div>
         </div>
 
       </div>
@@ -333,7 +315,7 @@ export function Home() {
 
         {/* Subcategories Grid: Sirf Thumbnail aur uske Niche Subcategory ka Naam */}
         <div className="flex-1 p-4 overflow-y-auto scrollbar-thin">
-          <div className="grid grid-cols-3 gap-4 max-w-5xl mx-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-3 landscape:grid-cols-4 gap-4 max-w-6xl mx-auto">
             {categorySubList.map((sub) => (
               <button
                 key={sub.id}
@@ -391,7 +373,7 @@ export function Home() {
 
         {/* Gallery Grid (Strict 16:9 HDTV Thumbnails, ZERO ABCD badges on top!) */}
         <div className="flex-1 p-3 overflow-y-auto scrollbar-thin">
-          <div className="grid grid-cols-3 gap-3 max-w-5xl mx-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-3 landscape:grid-cols-4 gap-3 max-w-6xl mx-auto">
             {galleryPhotos.map((photo) => {
               const orderedItems = cart.filter(c => c.photoId === photo.id);
               const totalPiecesOrdered = orderedItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -435,26 +417,106 @@ export function Home() {
   const photo = selectedPhoto || galleryPhotos[0];
 
   return (
-    <div className="w-full h-full flex flex-row gap-2 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden shadow-2xl p-1.5 select-none items-stretch">
+    <div className="w-full h-full flex flex-col landscape:flex-row gap-2 rounded-2xl bg-brand-navy-dark border border-slate-800 overflow-hidden shadow-2xl select-none items-stretch">
       
       {/* LEFT/CENTER: 100% CLEAN MAXIMIZED PRODUCT IMAGE WITH FINGER SLIDE SWIPE */}
       <div 
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        className="flex-1 h-full rounded-xl bg-black border border-slate-800/80 overflow-hidden relative flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
-        title="Swipe left or right to change image"
+        onTouchStartCapture={handleTouchStart}
+        onTouchMoveCapture={handleTouchMove}
+        onTouchEndCapture={handleTouchEnd}
+        onMouseDownCapture={handleMouseDown}
+        onMouseMoveCapture={handleMouseMove}
+        onMouseUpCapture={handleMouseUp}
+        className="flex-1 h-full rounded-xl bg-brand-navy-dark overflow-hidden relative flex items-center justify-center select-none"
+        title="Double tap or pinch to zoom. Swipe to change."
       >
-        <img
-          key={photo?.imageUri}
-          src={photo?.imageUri}
-          alt={photo?.photoCode}
-          draggable={false}
-          className="w-full h-full object-contain pointer-events-none"
-        />
+        {endOfCategorySuggestion ? (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900/90 text-white animate-fadeIn p-6">
+            <h2 className="text-xl sm:text-2xl font-bold mb-8 text-center text-brand-gold">
+              You've reached the end of this folder!
+            </h2>
+            
+            {(() => {
+              const currentCategorySubList = subCategories.filter(s => s.categoryId === activeCategoryId);
+              const currentSubIdx = currentCategorySubList.findIndex(s => s.id === activeSubCategoryId);
+              const nextSubCategory = currentSubIdx >= 0 && currentSubIdx < currentCategorySubList.length - 1
+                  ? currentCategorySubList[currentSubIdx + 1]
+                  : null;
+
+              if (nextSubCategory) {
+                return (
+                  <div className="flex flex-col items-center gap-4">
+                    <p className="text-sm text-slate-400">Continue exploring:</p>
+                    <button
+                      onClick={() => {
+                        setEndOfCategorySuggestion(false);
+                        handleSelectSubCategory(nextSubCategory.id);
+                      }}
+                      className="group flex flex-col items-center gap-3 bg-slate-800 border border-slate-700 hover:border-brand-gold p-4 rounded-2xl transition shadow-lg active:scale-95"
+                    >
+                      <div className="w-40 sm:w-56 aspect-video rounded-lg overflow-hidden bg-black shadow-inner">
+                        <img 
+                          src={nextSubCategory.thumbnailUrl} 
+                          className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
+                        />
+                      </div>
+                      <span className="font-bold text-lg text-slate-200 group-hover:text-brand-gold">
+                        {nextSubCategory.name}
+                      </span>
+                    </button>
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="flex flex-col items-center gap-6">
+                    <p className="text-sm text-slate-400">You've seen all folders in this category.</p>
+                    <button
+                      onClick={() => {
+                        setEndOfCategorySuggestion(false);
+                        setScreenMode('home');
+                        setShowroomScreenMode('home');
+                      }}
+                      className="px-6 py-3 rounded-xl bg-brand-gold text-black font-bold shadow-lg hover:bg-amber-400 transition active:scale-95"
+                    >
+                      Back to Categories
+                    </button>
+                  </div>
+                );
+              }
+            })()}
+
+            <button
+              onClick={() => setEndOfCategorySuggestion(false)}
+              className="mt-8 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 font-bold hover:bg-slate-700 hover:text-white transition shadow text-sm"
+            >
+              Go Back
+            </button>
+          </div>
+        ) : (
+          <TransformWrapper
+            initialScale={1}
+            minScale={1}
+            maxScale={4}
+            centerOnInit={true}
+            wheel={{ step: 0.1 }}
+            doubleClick={{ step: 0.5 }}
+            pinch={{ step: 5 }}
+            panning={{ disabled: !isZoomedIn }}
+            onTransform={(ref: any) => {
+              setIsZoomedIn(ref.state.scale > 1.05);
+            }}
+          >
+            <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <img
+                key={photo?.imageUri}
+                src={photo?.imageUri}
+                alt={photo?.photoCode}
+                draggable={false}
+                className="w-full h-full object-contain pointer-events-auto cursor-zoom-in"
+              />
+            </TransformComponent>
+          </TransformWrapper>
+        )}
 
         {/* Feedback Toast */}
         {qtyFeedback && (
@@ -467,16 +529,16 @@ export function Home() {
 
       {/* RIGHT: COMPACT SIDE PANEL FOR ABCD (With Gallery button, Product Code, ABCD, and Cart icon) */}
       {photo && (
-        <div className="w-[145px] sm:w-[160px] md:w-[175px] h-full rounded-2xl bg-slate-900 border border-slate-800 p-2 flex flex-col justify-between shadow-2xl flex-shrink-0">
+        <div className="w-full landscape:w-[145px] sm:landscape:w-[160px] md:landscape:w-[175px] h-auto landscape:h-full rounded-2xl bg-slate-900 border border-slate-800 p-2 flex flex-col justify-between shadow-2xl flex-shrink-0 gap-2 landscape:gap-0 items-stretch">
           
           {/* TOP: Gallery Back Button & Product Code */}
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-row landscape:flex-col gap-2 justify-between flex-shrink-0 w-full landscape:w-auto">
             <button
               onClick={() => {
                 setScreenMode('gallery');
                 setShowroomScreenMode('gallery');
               }}
-              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700/80 transition active:scale-95 shadow-sm"
+              className="flex-1 landscape:w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700/80 transition active:scale-95 shadow-sm"
               title="Back to Gallery"
             >
               <ArrowLeft size={13} className="text-brand-gold" />
@@ -484,16 +546,16 @@ export function Home() {
             </button>
 
             {/* Product Number in ABCD Side Panel */}
-            <div className="text-center py-1 px-1.5 rounded-lg bg-black/70 border border-slate-800 font-mono font-black text-xs text-brand-gold truncate shadow-inner">
+            <div className="flex-1 landscape:w-full flex items-center justify-center text-center py-1.5 px-2 rounded-lg bg-black/70 border border-slate-800 font-mono font-black text-xs text-brand-gold truncate shadow-inner">
               {photo?.photoCode}
             </div>
           </div>
 
           {/* MIDDLE: ABCD Steppers (Enlarged, high-contrast, finger-friendly) */}
-          <div className="flex flex-col gap-2 py-1 overflow-y-auto scrollbar-none">
+          <div className="grid grid-cols-2 landscape:flex landscape:flex-col gap-2 py-1 overflow-y-auto overflow-x-hidden scrollbar-none flex-1 content-start">
             {['A', 'B', 'C', 'D'].slice(0, photo.itemCount).map(option => {
               const isAvailable = photo[`${option.toLowerCase()}Available` as keyof typeof photo];
-              const currentQty = getOptionQty(photo.id, option, photo.defaultQuantity);
+              const currentQty = getOptionQty(photo.id, option);
               const badge = letterBadgeColors[option];
 
               if (!isAvailable) {
@@ -505,7 +567,7 @@ export function Home() {
                     <div className="w-7 h-7 rounded-lg bg-slate-800 text-slate-500 font-black text-xs flex items-center justify-center">
                       {option}
                     </div>
-                    <span className="text-[10px] text-slate-500 font-mono font-bold px-2">OUT</span>
+                    <span className="text-[10px] text-slate-500 font-mono font-bold px-2">OUT OF STOCK</span>
                   </div>
                 );
               }
@@ -517,13 +579,13 @@ export function Home() {
                 >
                   {/* Letter Badge (A, B, C, D) */}
                   <div 
-                    className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg ${badge.bg} ${badge.text} font-black text-xs sm:text-sm flex items-center justify-center shadow flex-shrink-0`}
+                    className={`w-8 h-8 rounded-lg ${badge.bg} ${badge.text} font-black text-xs sm:text-sm flex items-center justify-center shadow flex-shrink-0`}
                   >
                     {option}
                   </div>
 
                   {/* Large Finger-Friendly (-) Count (+) Stepper */}
-                  <div className="flex items-center bg-slate-900 border border-slate-700/90 rounded-lg overflow-hidden flex-1 justify-between">
+                  <div className="flex items-center bg-slate-900 border border-slate-700/90 rounded-lg overflow-hidden flex-1 justify-between max-w-[200px] landscape:max-w-none mx-auto">
                     {/* Big Minus Button */}
                     <button
                       onClick={() => handleUpdateQty(photo, option, currentQty - (photo.defaultQuantity >= 12 ? 6 : 1))}
@@ -563,11 +625,11 @@ export function Home() {
           {/* BOTTOM: Cart Button with ShoppingBag Icon */}
           <button
             onClick={() => setIsCartOpen(true)}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs shadow-lg transition active:scale-95 border border-amber-400/50"
+            className="w-full flex items-center justify-center gap-2 py-3 landscape:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-sm landscape:text-xs shadow-lg transition active:scale-95 border border-amber-400/50 flex-shrink-0"
             title="Open Order Slip / Cart"
           >
-            <ShoppingBag size={14} />
-            <span>{totalCartPieces > 0 ? `${totalCartPieces} pcs` : 'View Cart'}</span>
+            <ShoppingBag size={16} className="landscape:w-[14px] landscape:h-[14px]" />
+            <span>View Cart</span>
           </button>
 
         </div>

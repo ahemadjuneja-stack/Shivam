@@ -1,6 +1,11 @@
 {
   "name": "SHIVAM",
   "description": "B2B wholesale catalog and ordering app for cosmetics, imitation jewelry, and hair accessories with 16:9 multi-product photo ordering.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

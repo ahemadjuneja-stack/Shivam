@@ -21,9 +21,11 @@ import {
   RefreshCw,
   Lock,
   Unlock,
-  ShieldCheck
+  ShieldCheck,
+  MessageCircle
 } from 'lucide-react';
 import { MainCategory, CatalogPhoto } from '../types';
+import { ChatModal } from '../components/ChatModal';
 
 export function AdminDashboard() {
   // Admin PIN Protection (Default PIN: 1234)
@@ -32,6 +34,7 @@ export function AdminDashboard() {
   });
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
+  const [selectedChatCustomer, setSelectedChatCustomer] = useState<string | null>(null);
 
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,7 +53,7 @@ export function AdminDashboard() {
     setIsAdminAuthenticated(false);
   };
 
-  const [activeTab, setActiveTab] = useState<'orders' | 'customers' | 'catalog' | 'mobile_guide'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'customers' | 'catalog' | 'messages' | 'mobile_guide'>('orders');
   
   const orders = useAppStore(state => state.orders);
   const customers = useAppStore(state => state.customers);
@@ -424,6 +427,18 @@ export function AdminDashboard() {
             <span>Mobile App Test / Download</span>
           </button>
 
+          <button 
+            onClick={() => setActiveTab('messages')}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 transition ${
+              activeTab === 'messages' 
+                ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20' 
+                : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
+            }`}
+          >
+            <MessageCircle size={16} /> 
+            <span>Messages</span>
+          </button>
+
         </div>
 
         {/* Defaults Reset Button */}
@@ -548,6 +563,24 @@ export function AdminDashboard() {
                       </button>
                     </div>
                   </div>
+
+                  {/* Customer Order Notes & Voice Note */}
+                  {(order.notes || order.voiceNoteUri) && (
+                    <div className="mb-4 bg-slate-900 border-l-4 border-amber-500 rounded-r-xl p-3 flex flex-col gap-2">
+                      {order.notes && (
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500/70 block mb-1">Customer Note</span>
+                          <p className="text-sm text-amber-100/90 whitespace-pre-wrap">{order.notes}</p>
+                        </div>
+                      )}
+                      {order.voiceNoteUri && (
+                        <div className="mt-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500/70 block mb-1">Voice Recording</span>
+                          <audio controls src={order.voiceNoteUri} className="h-8 max-w-[250px] w-full" />
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Department Packing Stations */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
@@ -989,6 +1022,48 @@ export function AdminDashboard() {
             ))}
           </div>
 
+        </div>
+      )}
+
+      {/* -----------------------------------------------------------------------
+          TAB: MESSAGES
+          ----------------------------------------------------------------------- */}
+      {activeTab === 'messages' && (
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl max-w-4xl mx-auto">
+          <h3 className="font-black text-lg text-white mb-4 flex items-center gap-2">
+            <MessageCircle className="text-brand-gold" />
+            Customer Messages
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {customers.map(customer => {
+              const customerMsgs = useAppStore.getState().messages.filter(m => m.customerCode === customer.customerCode);
+              
+              return (
+                <button
+                  key={customer.customerCode}
+                  onClick={() => setSelectedChatCustomer(customer.customerCode)}
+                  className="flex flex-col gap-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-brand-gold/50 p-4 rounded-xl transition text-left relative"
+                >
+                  <div className="font-bold text-slate-200">{customer.shopName}</div>
+                  <div className="text-xs text-slate-500">{customer.customerCode}</div>
+                  
+                  {customerMsgs.length > 0 && (
+                    <div className="text-xs text-brand-gold mt-2">
+                      {customerMsgs.length} messages
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          
+          {selectedChatCustomer && (
+            <ChatModal 
+              isOpen={!!selectedChatCustomer} 
+              onClose={() => setSelectedChatCustomer(null)} 
+              defaultCustomerCode={selectedChatCustomer}
+            />
+          )}
         </div>
       )}
 

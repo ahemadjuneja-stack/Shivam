@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { MainCategory, CategoryItem, SubCategory, CatalogPhoto, Customer, OrderCartItem, WholesaleOrder } from '../types';
+import { MainCategory, CategoryItem, SubCategory, CatalogPhoto, Customer, OrderCartItem, WholesaleOrder, ChatMessage } from '../types';
 
 interface AppState {
   // Catalog Data
@@ -9,6 +9,7 @@ interface AppState {
   photos: CatalogPhoto[];
   customers: Customer[];
   orders: WholesaleOrder[];
+  messages: ChatMessage[];
   
   // Navigation & Selection in Landscape Mode
   activeCategoryId: string;
@@ -20,6 +21,8 @@ interface AppState {
   cart: OrderCartItem[];
   currentCustomer: Customer | null;
   isCartOpen: boolean;
+  orderNote: string;
+  orderVoiceNote: string | null;
 
   // Actions
   setShowroomScreenMode: (mode: 'home' | 'subcategories' | 'gallery' | 'fullimage') => void;
@@ -27,6 +30,8 @@ interface AppState {
   setActiveSubCategory: (subCategoryId: string) => void;
   setActivePhoto: (photoId: string) => void;
   setIsCartOpen: (open: boolean) => void;
+  setOrderNote: (note: string) => void;
+  setOrderVoiceNote: (uri: string | null) => void;
 
   addToCart: (item: OrderCartItem) => void;
   setItemQuantity: (photo: CatalogPhoto, optionLetter: string, quantity: number) => void;
@@ -35,6 +40,7 @@ interface AppState {
   clearCart: () => void;
   setCurrentCustomer: (customer: Customer | null) => void;
   placeOrder: () => void;
+  addMessage: (message: ChatMessage) => void;
   
   // Admin Actions
   addCustomer: (customer: Customer) => void;
@@ -48,17 +54,17 @@ interface AppState {
 
 const defaultCategories: CategoryItem[] = [
   { 
-    id: MainCategory.IMITATION, 
-    displayName: 'Imitation Jewelry', 
-    thumbnailUrl: 'https://images.unsplash.com/photo-1599643478514-4a410f0a82ef?auto=format&fit=crop&q=80&w=600', 
-    accentColorHex: '#F59E0B', 
-    sortOrder: 1 
-  },
-  { 
     id: MainCategory.COSMETICS, 
     displayName: 'Cosmetics', 
     thumbnailUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&q=80&w=600', 
     accentColorHex: '#EC4899', 
+    sortOrder: 1 
+  },
+  { 
+    id: MainCategory.IMITATION, 
+    displayName: 'Imitation Jewelry', 
+    thumbnailUrl: 'https://images.unsplash.com/photo-1599643478514-4a410f0a82ef?auto=format&fit=crop&q=80&w=600', 
+    accentColorHex: '#F59E0B', 
     sortOrder: 2 
   },
   { 
@@ -337,6 +343,7 @@ export const useAppStore = create<AppState>()(
         { customerCode: 'CUST-103', shopName: 'Radhe Fashion Jewelry', cityName: 'Surat', mobileNumber: '9712345678', contactPerson: 'Amit Shah', address: 'Bhagal Main Road' }
       ],
       orders: [],
+      messages: [],
       
       activeCategoryId: MainCategory.IMITATION,
       activeSubCategoryId: 'sub-earrings',
@@ -346,8 +353,12 @@ export const useAppStore = create<AppState>()(
       cart: [],
       currentCustomer: { customerCode: 'CUST-101', shopName: 'Pooja Novelty Store', cityName: 'Mumbai', mobileNumber: '9876543210', contactPerson: 'Rajesh Bhai', address: 'Shop 14, Dadar Market' },
       isCartOpen: false,
+      orderNote: '',
+      orderVoiceNote: null,
 
       setShowroomScreenMode: (mode) => set({ showroomScreenMode: mode }),
+      setOrderNote: (note) => set({ orderNote: note }),
+      setOrderVoiceNote: (uri) => set({ orderVoiceNote: uri }),
 
       setActiveCategory: (categoryId) => set((state) => {
         const firstSub = state.subCategories.find(s => s.categoryId === categoryId);
@@ -445,16 +456,23 @@ export const useAppStore = create<AppState>()(
           cosmeticsStatus: hasCosmetics ? 'PENDING' : 'NOT_APPLICABLE',
           hairStatus: hasHair ? 'PENDING' : 'NOT_APPLICABLE',
           overallStatus: 'RECEIVED',
-          notes: '',
+          notes: state.orderNote || '',
+          voiceNoteUri: state.orderVoiceNote || undefined,
           createdAt: Date.now()
         };
 
         return {
           orders: [newOrder, ...state.orders],
           cart: [],
+          orderNote: '',
+          orderVoiceNote: null,
           isCartOpen: false
         };
       }),
+
+      addMessage: (message) => set((state) => ({
+        messages: [...state.messages, message]
+      })),
 
       addCustomer: (customer) => set((state) => ({ customers: [...state.customers, customer] })),
 
