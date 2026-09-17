@@ -38,6 +38,77 @@ export interface CatalogPhoto {
   defaultQuantity: number;
   sortOrder: number;
   description: string;
+  // Dynamic fields from Firestore
+  variants?: Array<{
+    key: string;
+    label: string;
+    isAvailable: boolean;
+    defaultQuantity?: number;
+  }>;
+  aLabel?: string;
+  bLabel?: string;
+  cLabel?: string;
+  dLabel?: string;
+  aDefaultQuantity?: number;
+  bDefaultQuantity?: number;
+  cDefaultQuantity?: number;
+  dDefaultQuantity?: number;
+}
+
+export interface ProductVariant {
+  key: string;        // 'A', 'B', 'C', 'D' or index-based
+  label: string;      // 'Black', 'Maroon', 'A', 'B', etc.
+  isAvailable: boolean;
+  defaultQuantity: number;
+}
+
+export function getPhotoVariants(photo: CatalogPhoto): ProductVariant[] {
+  const baseDefaultQty = typeof photo.defaultQuantity === 'number' && photo.defaultQuantity > 0 
+    ? photo.defaultQuantity 
+    : 6;
+  
+  // 1. If photo.variants is an array of objects
+  if (Array.isArray(photo.variants) && photo.variants.length > 0) {
+    return photo.variants.map((v: any, index: number) => {
+      const keys = ['A', 'B', 'C', 'D'];
+      const defaultKey = keys[index] || `V${index + 1}`;
+      return {
+        key: v.key || defaultKey,
+        label: v.label || v.name || defaultKey,
+        isAvailable: v.isAvailable !== undefined ? v.isAvailable : true,
+        defaultQuantity: typeof v.defaultQuantity === 'number' && v.defaultQuantity > 0 
+          ? v.defaultQuantity 
+          : baseDefaultQty
+      };
+    });
+  }
+
+  // 2. Generate from standard properties (A, B, C, D)
+  const variantsList: ProductVariant[] = [];
+  const count = typeof photo.itemCount === 'number' ? photo.itemCount : 4;
+  const options = ['A', 'B', 'C', 'D'];
+
+  for (let i = 0; i < count; i++) {
+    const opt = options[i];
+    const isAvailKey = `${opt.toLowerCase()}Available` as keyof CatalogPhoto;
+    const labelKey = `${opt.toLowerCase()}Label` as keyof CatalogPhoto;
+    const qtyKey = `${opt.toLowerCase()}DefaultQuantity` as keyof CatalogPhoto;
+
+    const isAvailable = photo[isAvailKey] !== undefined ? !!photo[isAvailKey] : true;
+    const label = (photo[labelKey] as string) || opt;
+    const defaultQuantity = typeof photo[qtyKey] === 'number' && (photo[qtyKey] as number) > 0 
+      ? (photo[qtyKey] as number) 
+      : baseDefaultQty;
+
+    variantsList.push({
+      key: opt,
+      label,
+      isAvailable,
+      defaultQuantity
+    });
+  }
+
+  return variantsList;
 }
 
 export interface ShowroomVideo {
@@ -68,15 +139,30 @@ export interface Customer {
 }
 
 export interface ChatMessage {
-  id: string;
-  customerCode: string;
-  customerId?: string;
-  shopName?: string;
+  id?: string;
+  messageId?: string;
+  customerId: string;
+  customerCode?: string;
+  shopName: string;
   sender: 'customer' | 'admin';
+  type: 'text' | 'image' | 'voice';
   text?: string;
-  imageUri?: string;
-  audioUri?: string;
-  timestamp: number;
+  mediaUrl?: string; // image or audio data / URL
+  imageUri?: string; // backwards compatibility
+  audioUri?: string; // backwards compatibility
+  isRead: boolean;
+  timestamp: any;
+  createdAt?: number;
+}
+
+export interface BroadcastMessage {
+  id: string;
+  title?: string;
+  message: string;
+  imageUrl?: string;
+  sender?: string;
+  isReadByCustomer?: boolean;
+  timestamp: any;
 }
 
 export interface CommunityPost {
@@ -100,6 +186,7 @@ export interface OrderCartItem {
   subCategoryName: string;
   optionLetter: string;
   quantity: number;
+  defaultQuantity?: number;
   // Dashboard item format fields
   id?: string;
   name?: string;

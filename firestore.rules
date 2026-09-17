@@ -35,6 +35,12 @@ service cloud.firestore {
     match /messages/{docId} {
       allow read, write: if true;
     }
+    match /conversations/{customerId}/messages/{msgId} {
+      allow read, write: if true;
+    }
+    match /broadcast_messages/{docId} {
+      allow read, write: if true;
+    }
     match /{document=**} {
       allow read, write: if true;
     }

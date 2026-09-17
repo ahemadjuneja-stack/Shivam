@@ -165,15 +165,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const setOrderNote = useAppStore(state => state.setOrderNote);
 
   const messages = useAppStore(state => state.messages);
-  const communityPosts = useAppStore(state => state.communityPosts);
-  const lastReadTimestamp = useAppStore(state => state.lastReadTimestamp);
+  const broadcastMessages = useAppStore(state => state.broadcastMessages);
   const markMessagesAsRead = useAppStore(state => state.markMessagesAsRead);
 
-  const hasUnreadDot = messages.some(
-    m => (m.timestamp || 0) > (lastReadTimestamp || 0) && m.sender !== 'customer'
-  ) || communityPosts.some(
-    p => (p.timestamp || 0) > (lastReadTimestamp || 0)
-  );
+  const currentCustId = currentCustomer?.customerId || currentCustomer?.customerCode || 'CUST-GENERAL';
+  
+  // Real-time unread count: admin messages for this specific customer + unread broadcasts
+  const unreadAdminCount = messages.filter(
+    m => (m.customerId === currentCustId || m.customerCode === currentCustId) && m.sender === 'admin' && !m.isRead
+  ).length;
+
+  const unreadBroadcastCount = (broadcastMessages || []).filter(b => !b.isReadByCustomer).length;
+  const totalUnreadCount = unreadAdminCount + unreadBroadcastCount;
 
   const [showLogin, setShowLogin] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -307,22 +310,21 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="hidden xs:inline text-[9px]">{isFirebaseConnected ? 'Live' : '...'}</span>
               </div>
 
-              {/* Community Hub Button with Notification Dot */}
+              {/* Community Hub Button with Real-Time Unread Count Badge */}
               <button
                 onClick={() => {
                   setIsChatOpen(true);
                   markMessagesAsRead();
                 }}
-                className="relative flex items-center gap-1.5 bg-brand-gold/10 border border-brand-gold/50 hover:bg-brand-gold hover:text-black text-brand-gold px-2.5 py-1 rounded-lg text-[11px] transition font-bold"
-                title="Community Hub & Support Chat"
+                className="relative flex items-center gap-1.5 bg-brand-gold/10 border border-brand-gold/50 hover:bg-brand-gold hover:text-black text-brand-gold px-2.5 py-1 rounded-lg text-[11px] transition font-bold shadow-sm"
+                title="Community Hub & WhatsApp Support Chat"
               >
                 <div className="relative flex items-center justify-center">
                   <MessageCircle size={14} />
-                  {hasUnreadDot && (
-                    <>
-                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-ping" />
-                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full border border-slate-900" />
-                    </>
+                  {totalUnreadCount > 0 && (
+                    <span className="absolute -top-2 -right-2 min-w-[16px] h-4 px-1 bg-red-600 text-white text-[9px] font-black rounded-full flex items-center justify-center border border-black shadow animate-pulse">
+                      {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
+                    </span>
                   )}
                 </div>
                 <span className="hidden xs:inline">Community Hub</span>
@@ -431,8 +433,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl overflow-hidden p-1 flex-1">
                         <button
                           onClick={() => {
-                            const step = item.quantity >= 12 ? 6 : 1;
-                            updateCartItemQuantity(idx, item.quantity - step);
+                            const minQty = item.defaultQuantity || 6;
+                            const target = item.quantity <= minQty ? 0 : item.quantity - minQty;
+                            updateCartItemQuantity(idx, target);
                           }}
                           className="flex-1 py-3 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-200 active:scale-95 rounded-lg transition"
                         >
@@ -443,8 +446,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
                         </span>
                         <button
                           onClick={() => {
-                            const step = item.quantity >= 12 ? 6 : 1;
-                            updateCartItemQuantity(idx, item.quantity + step);
+                            const minQty = item.defaultQuantity || 6;
+                            const target = item.quantity + minQty;
+                            updateCartItemQuantity(idx, target);
                           }}
                           className="flex-1 py-3 flex items-center justify-center bg-amber-500 hover:bg-amber-400 text-black active:scale-95 rounded-lg transition font-black"
                         >

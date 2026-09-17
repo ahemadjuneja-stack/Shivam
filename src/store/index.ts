@@ -10,7 +10,9 @@ import {
   OrderCartItem, 
   WholesaleOrder, 
   ChatMessage, 
-  CommunityPost 
+  CommunityPost,
+  BroadcastMessage,
+  getPhotoVariants
 } from '../types';
 import { 
   syncPhotoToFirebase, 
@@ -21,6 +23,7 @@ import {
   updateOrderStatusInFirebase, 
   deleteOrderFromFirebase,
   syncMessageToFirebase,
+  markCustomerMessagesAsReadInFirebase,
   syncCommunityPostToFirebase,
   likeCommunityPostInFirebase,
   deleteCommunityPostFromFirebase
@@ -35,6 +38,7 @@ interface AppState {
   customers: Customer[];
   orders: WholesaleOrder[];
   messages: ChatMessage[];
+  broadcastMessages: BroadcastMessage[];
   communityPosts: CommunityPost[];
   
   // Navigation & Selection in Landscape Mode
@@ -137,6 +141,7 @@ export const useAppStore = create<AppState>()(
       customers: [],
       orders: [],
       messages: [],
+      broadcastMessages: [],
       communityPosts: [],
       
       activeCategoryId: MainCategory.IMITATION,
@@ -154,7 +159,26 @@ export const useAppStore = create<AppState>()(
       setShowroomScreenMode: (mode) => set({ showroomScreenMode: mode }),
       setOrderNote: (note) => set({ orderNote: note }),
       setOrderVoiceNote: (uri) => set({ orderVoiceNote: uri }),
-      markMessagesAsRead: () => set({ lastReadTimestamp: Date.now() }),
+      markMessagesAsRead: () => {
+        const custId = get().currentCustomer?.customerId || get().currentCustomer?.customerCode;
+        if (custId) {
+          markCustomerMessagesAsReadInFirebase(custId).catch(console.error);
+        }
+        set((state) => ({
+          lastReadTimestamp: Date.now(),
+          messages: state.messages.map((m) => {
+            const mCust = m.customerId || m.customerCode;
+            if (mCust === custId && m.sender === 'admin') {
+              return { ...m, isRead: true };
+            }
+            return m;
+          }),
+          broadcastMessages: state.broadcastMessages.map((b) => ({
+            ...b,
+            isReadByCustomer: true
+          }))
+        }));
+      },
 
       setActiveCategory: (categoryId) => set((state) => {
         const firstSub = state.subCategories.find(s => s.categoryId === categoryId);
@@ -181,9 +205,7 @@ export const useAppStore = create<AppState>()(
 
       addToCart: (item) => set((state) => ({ cart: [...state.cart, item] })),
       setItemQuantity: (photo, optionLetter, quantity) => set((state) => {
-        const existingIdx = state.cart.findIndex(
-          i => i.photoId === photo.id && i.optionLetter === optionLetter
-        );
+        const existingIdx = state.cart.findIndex(i => i.photoId === photo.id && i.optionLetter === optionLetter);
         if (quantity <= 0) {
           if (existingIdx !== -1) {
             const updated = [...state.cart];
@@ -193,12 +215,13 @@ export const useAppStore = create<AppState>()(
           return state;
         }
 
+        const variants = getPhotoVariants(photo);
+        const variantObj = variants.find(v => v.key === optionLetter);
+        const minQty = variantObj ? variantObj.defaultQuantity : (photo.defaultQuantity || 6);
+
         if (existingIdx !== -1) {
           const updated = [...state.cart];
-          updated[existingIdx] = {
-            ...updated[existingIdx],
-            quantity
-          };
+          updated[existingIdx] = { ...updated[existingIdx], quantity, defaultQuantity: minQty };
           return { cart: updated };
         } else {
           const newItem: OrderCartItem = {
@@ -209,8 +232,9 @@ export const useAppStore = create<AppState>()(
             subCategoryName: photo.subCategoryName,
             optionLetter,
             quantity,
+            defaultQuantity: minQty,
             id: `${photo.id}_${optionLetter}`,
-            name: `${photo.photoCode} (Option ${optionLetter} - ${photo.subCategoryName})`,
+            name: `${photo.photoCode} (Option ${optionLetter})`,
             variant: optionLetter,
             price: 0
           };

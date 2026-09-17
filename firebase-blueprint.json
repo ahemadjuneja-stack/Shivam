@@ -95,6 +95,14 @@
     "/chat_messages/{messageId}": {
       "schema": { "$ref": "#/entities/ChatMessage" },
       "description": "Collection of customer chat messages"
+    },
+    "/conversations/{customerId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Customer specific conversation thread"
+    },
+    "/broadcast_messages/{broadcastId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Showroom wholesale broadcasts and announcements"
     }
   }
 }

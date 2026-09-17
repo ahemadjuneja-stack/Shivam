@@ -32,6 +32,7 @@ export function useFirebaseSync() {
     let unsubscribeCustomers: (() => void) | null = null;
     let unsubscribeMessages: (() => void) | null = null;
     let unsubscribeAltMessages: (() => void) | null = null;
+    let unsubscribeBroadcasts: (() => void) | null = null;
     let unsubscribeCommunityPosts: (() => void) | null = null;
 
     // Track messages from both 'chat_messages' and 'messages'
@@ -57,16 +58,26 @@ export function useFirebaseSync() {
         ? data.timestamp.toMillis() 
         : (typeof data.timestamp === 'number' ? data.timestamp : (data.createdAt || Date.now()));
 
+      const msgType: 'text' | 'image' | 'voice' = data.type || 
+        (data.audioUri || data.audioUrl ? 'voice' : (data.imageUri || data.imageUrl ? 'image' : 'text'));
+      
+      const media = data.mediaUrl || data.imageUri || data.imageUrl || data.audioUri || data.audioUrl || undefined;
+
       return {
         id: data.id || data.messageId || doc.id,
+        messageId: data.messageId || data.id || doc.id,
         customerCode: data.customerCode || data.customerId || '',
         customerId: data.customerId || data.customerCode || '',
         shopName: data.shopName || '',
         sender: data.sender || 'customer',
+        type: msgType,
         text: data.text || data.message || '',
-        imageUri: data.imageUri || data.imageUrl || undefined,
-        audioUri: data.audioUri || data.audioUrl || undefined,
-        timestamp: msgTimestamp
+        mediaUrl: media,
+        imageUri: msgType === 'image' ? media : (data.imageUri || data.imageUrl || undefined),
+        audioUri: msgType === 'voice' ? media : (data.audioUri || data.audioUrl || undefined),
+        isRead: data.isRead !== undefined ? data.isRead : (data.read !== undefined ? data.read : false),
+        timestamp: msgTimestamp,
+        createdAt: data.createdAt || msgTimestamp
       };
     }
 
@@ -107,7 +118,17 @@ export function useFirebaseSync() {
         dAvailable: data.dAvailable !== undefined ? data.dAvailable : (data.d !== undefined ? data.d : true),
         defaultQuantity: typeof data.defaultQuantity === 'number' ? data.defaultQuantity : 6,
         sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0,
-        description: data.description || ''
+        description: data.description || '',
+        // Dynamic fields
+        variants: data.variants || undefined,
+        aLabel: data.aLabel || undefined,
+        bLabel: data.bLabel || undefined,
+        cLabel: data.cLabel || undefined,
+        dLabel: data.dLabel || undefined,
+        aDefaultQuantity: typeof data.aDefaultQuantity === 'number' ? data.aDefaultQuantity : undefined,
+        bDefaultQuantity: typeof data.bDefaultQuantity === 'number' ? data.bDefaultQuantity : undefined,
+        cDefaultQuantity: typeof data.cDefaultQuantity === 'number' ? data.cDefaultQuantity : undefined,
+        dDefaultQuantity: typeof data.dDefaultQuantity === 'number' ? data.dDefaultQuantity : undefined
       };
     }
 
@@ -334,7 +355,8 @@ export function useFirebaseSync() {
           chatMessagesMap.clear();
           snapshot.forEach((doc) => {
             const msg = normalizeMessage(doc);
-            chatMessagesMap.set(msg.id, msg);
+            const msgKey = msg.id || msg.messageId || doc.id;
+            chatMessagesMap.set(msgKey, msg);
           });
           updateMergedMessages();
         }, (err) => {
@@ -348,11 +370,40 @@ export function useFirebaseSync() {
             altMessagesMap.clear();
             snapshot.forEach((doc) => {
               const msg = normalizeMessage(doc);
-              altMessagesMap.set(msg.id, msg);
+              const msgKey = msg.id || msg.messageId || doc.id;
+              altMessagesMap.set(msgKey, msg);
             });
             updateMergedMessages();
           }, () => {
             // Ignored if alternate collection is not present
+          });
+        } catch {}
+
+        // 11. Real-time listener for 'broadcast_messages' collection
+        try {
+          const broadcastCol = collection(db, COLLECTIONS.BROADCAST_MESSAGES);
+          unsubscribeBroadcasts = onSnapshot(broadcastCol, (snapshot) => {
+            const fetchedBroadcasts: any[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data() as any;
+              const bTimestamp = data.timestamp?.toMillis 
+                ? data.timestamp.toMillis() 
+                : (typeof data.timestamp === 'number' ? data.timestamp : (data.createdAt || Date.now()));
+
+              fetchedBroadcasts.push({
+                id: doc.id,
+                title: data.title || 'Announcement',
+                message: data.message || data.text || '',
+                imageUrl: data.imageUrl || data.imageUri || undefined,
+                sender: data.sender || 'Admin',
+                isReadByCustomer: data.isReadByCustomer || false,
+                timestamp: bTimestamp
+              });
+            });
+            fetchedBroadcasts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            useAppStore.setState({ broadcastMessages: fetchedBroadcasts });
+          }, () => {
+            // Ignored if broadcast collection not configured yet
           });
         } catch {}
 
@@ -375,6 +426,7 @@ export function useFirebaseSync() {
       if (unsubscribeCommunityPosts) unsubscribeCommunityPosts();
       if (unsubscribeMessages) unsubscribeMessages();
       if (unsubscribeAltMessages) unsubscribeAltMessages();
+      if (unsubscribeBroadcasts) unsubscribeBroadcasts();
     };
   }, []);
 

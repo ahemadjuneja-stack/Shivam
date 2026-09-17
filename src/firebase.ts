@@ -9,7 +9,12 @@ import {
   serverTimestamp,
   increment,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  collection,
+  query,
+  where,
+  getDocs,
+  writeBatch
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import { CatalogPhoto, WholesaleOrder, Customer, ChatMessage, CommunityPost } from './types';
@@ -34,6 +39,8 @@ export const COLLECTIONS = {
   ORDERS: 'orders',
   COMMUNITY_POSTS: 'community_posts',
   MESSAGES: 'chat_messages',
+  CONVERSATIONS: 'conversations',
+  BROADCAST_MESSAGES: 'broadcast_messages',
   CATEGORIES: 'categories',
   SUBCATEGORIES: 'subCategories',
   SUBCATEGORIES_LOWER: 'subcategories'
@@ -282,34 +289,50 @@ export async function deleteCommunityPostFromFirebase(postId: string): Promise<v
 }
 
 export async function syncMessageToFirebase(message: ChatMessage): Promise<void> {
-  const msgId = message.id || `msg-${Date.now()}`;
-  const path = `${COLLECTIONS.MESSAGES}/${msgId}`;
-  const payload = {
+  const msgId = message.messageId || message.id || `msg-${Date.now()}`;
+  const customerId = message.customerId || message.customerCode || 'CUST-GENERAL';
+  const shopName = message.shopName || '';
+  const sender = message.sender || 'customer';
+  const type = message.type || (message.audioUri ? 'voice' : message.imageUri ? 'image' : 'text');
+  const mediaUrl = message.mediaUrl || message.imageUri || message.audioUri || null;
+
+  const payload: any = {
     id: msgId,
     messageId: msgId,
-    customerId: message.customerId || message.customerCode || 'CUST-GENERAL',
-    customerCode: message.customerCode || message.customerId || 'CUST-GENERAL',
-    shopName: message.shopName || 'Wholesale Buyer',
-    sender: message.sender || 'customer',
+    customerId,
+    customerCode: customerId,
+    shopName,
+    sender,
+    type,
     text: message.text || '',
     message: message.text || '',
-    imageUri: message.imageUri || null,
-    imageUrl: message.imageUri || null,
-    audioUri: message.audioUri || null,
-    audioUrl: message.audioUri || null,
-    isRead: false,
-    read: false,
-    status: 'sent',
+    mediaUrl,
+    imageUri: type === 'image' ? mediaUrl : (message.imageUri || null),
+    imageUrl: type === 'image' ? mediaUrl : (message.imageUri || null),
+    audioUri: type === 'voice' ? mediaUrl : (message.audioUri || null),
+    audioUrl: type === 'voice' ? mediaUrl : (message.audioUri || null),
+    isRead: message.isRead ?? false,
+    read: message.isRead ?? false,
     timestamp: serverTimestamp(),
     createdAt: Date.now()
   };
+
+  const path = `${COLLECTIONS.MESSAGES}/${msgId}`;
 
   try {
     // 1. Primary write to 'chat_messages'
     const msgRef = doc(db, COLLECTIONS.MESSAGES, msgId);
     await setDoc(msgRef, payload, { merge: true });
 
-    // 2. Also mirror to 'messages' collection so dashboard never misses it
+    // 2. Also write to 'conversations/{customerId}/messages/{msgId}' subcollection
+    try {
+      const convMsgRef = doc(db, COLLECTIONS.CONVERSATIONS, customerId, 'messages', msgId);
+      await setDoc(convMsgRef, payload, { merge: true });
+    } catch (subErr) {
+      console.warn('Subcollection conversation write skipped:', subErr);
+    }
+
+    // 3. Mirror to 'messages' collection for backward compatibility
     try {
       const altMsgRef = doc(db, 'messages', msgId);
       await setDoc(altMsgRef, payload, { merge: true });
@@ -321,11 +344,71 @@ export async function syncMessageToFirebase(message: ChatMessage): Promise<void>
   }
 }
 
-export async function deleteMessageFromFirebase(messageId: string): Promise<void> {
+export async function markCustomerMessagesAsReadInFirebase(customerId: string): Promise<void> {
+  if (!customerId) return;
+  try {
+    // 1. In 'chat_messages' collection
+    const messagesCol = collection(db, COLLECTIONS.MESSAGES);
+    const q = query(
+      messagesCol, 
+      where('customerId', '==', customerId),
+      where('sender', '==', 'admin'),
+      where('isRead', '==', false)
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      snap.forEach((d) => {
+        batch.update(d.ref, { isRead: true, read: true });
+      });
+      await batch.commit();
+    }
+
+    // 2. In subcollection 'conversations/{customerId}/messages'
+    try {
+      const subCol = collection(db, COLLECTIONS.CONVERSATIONS, customerId, 'messages');
+      const subQ = query(subCol, where('sender', '==', 'admin'), where('isRead', '==', false));
+      const subSnap = await getDocs(subQ);
+      if (!subSnap.empty) {
+        const subBatch = writeBatch(db);
+        subSnap.forEach((d) => {
+          subBatch.update(d.ref, { isRead: true, read: true });
+        });
+        await subBatch.commit();
+      }
+    } catch {}
+
+    // 3. In legacy 'messages' collection
+    try {
+      const altCol = collection(db, 'messages');
+      const altQ = query(altCol, where('customerId', '==', customerId), where('sender', '==', 'admin'), where('isRead', '==', false));
+      const altSnap = await getDocs(altQ);
+      if (!altSnap.empty) {
+        const altBatch = writeBatch(db);
+        altSnap.forEach((d) => {
+          altBatch.update(d.ref, { isRead: true, read: true });
+        });
+        await altBatch.commit();
+      }
+    } catch {}
+  } catch (error) {
+    console.warn('markCustomerMessagesAsReadInFirebase error:', error);
+  }
+}
+
+export async function deleteMessageFromFirebase(messageId: string, customerId?: string): Promise<void> {
   const path = `${COLLECTIONS.MESSAGES}/${messageId}`;
   try {
     const msgRef = doc(db, COLLECTIONS.MESSAGES, messageId);
     await deleteDoc(msgRef);
+
+    if (customerId) {
+      try {
+        const convMsgRef = doc(db, COLLECTIONS.CONVERSATIONS, customerId, 'messages', messageId);
+        await deleteDoc(convMsgRef);
+      } catch {}
+    }
+
     try {
       const altMsgRef = doc(db, 'messages', messageId);
       await deleteDoc(altMsgRef);

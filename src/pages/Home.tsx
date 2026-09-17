@@ -7,7 +7,7 @@ import {
   Check,
   ShoppingBag
 } from 'lucide-react';
-import { CatalogPhoto, ShowroomVideo } from '../types';
+import { CatalogPhoto, ShowroomVideo, getPhotoVariants } from '../types';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { HomeVideoSlider } from '../components/HomeVideoSlider';
 
@@ -544,42 +544,57 @@ export function Home() {
 
           {/* MIDDLE: ABCD Steppers (Enlarged, high-contrast, finger-friendly) */}
           <div className="grid grid-cols-2 landscape:flex landscape:flex-col gap-2 py-1 overflow-y-auto overflow-x-hidden scrollbar-none flex-1 content-start">
-            {['A', 'B', 'C', 'D'].slice(0, photo.itemCount).map(option => {
-              const isAvailable = photo[`${option.toLowerCase()}Available` as keyof typeof photo];
-              const currentQty = getOptionQty(photo.id, option);
-              const badge = letterBadgeColors[option];
+            {getPhotoVariants(photo).map((variant) => {
+              const isAvailable = variant.isAvailable;
+              const currentQty = getOptionQty(photo.id, variant.key);
+              const minQty = variant.defaultQuantity;
+              const badge = letterBadgeColors[variant.key] || { bg: 'bg-indigo-600', text: 'text-white' };
 
               if (!isAvailable) {
                 return (
                   <div 
-                    key={option} 
-                    className="flex items-center justify-between p-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80 opacity-40"
+                    key={variant.key} 
+                    className="flex flex-wrap items-center justify-between p-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80 opacity-40 gap-1.5"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-slate-500 font-black text-xs flex items-center justify-center">
-                      {option}
+                    <div className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-500 font-black text-xs flex items-center justify-center whitespace-nowrap">
+                      {variant.label}
                     </div>
-                    <span className="text-[10px] text-slate-500 font-mono font-bold px-2">OUT OF STOCK</span>
+                    <span className="text-[10px] text-slate-500 font-mono font-bold px-2">OUT</span>
                   </div>
                 );
               }
 
               return (
                 <div
-                  key={option}
-                  className="flex items-center justify-between p-1 rounded-xl bg-slate-950 border border-slate-800 hover:border-brand-gold/60 transition shadow-sm gap-1.5"
+                  key={variant.key}
+                  className="flex flex-wrap items-center justify-between p-1.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-brand-gold/60 transition shadow-sm gap-1.5"
                 >
-                  {/* Letter Badge (A, B, C, D) */}
-                  <div 
-                    className={`w-8 h-8 rounded-lg ${badge.bg} ${badge.text} font-black text-xs sm:text-sm flex items-center justify-center shadow flex-shrink-0`}
+                  {/* Interactive Variant Badge (Clicking acts ONLY as CLEAR when has quantity, NEVER increments) */}
+                  <button
+                    onClick={() => {
+                      if (currentQty > 0) {
+                        handleUpdateQty(photo, variant.key, 0); // Touching label CLEARS quantity
+                      }
+                    }}
+                    disabled={currentQty === 0}
+                    className={`min-w-fit px-3 py-1.5 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center shadow transition active:scale-95 whitespace-nowrap ${
+                      currentQty > 0 
+                        ? `${badge.bg} ${badge.text} cursor-pointer` 
+                        : 'bg-slate-800 text-slate-400 opacity-60 cursor-default'
+                    }`}
+                    title={currentQty > 0 ? `Tap to Clear (${variant.label})` : `${variant.label} (Pack: ${minQty} pcs)`}
                   >
-                    {option}
-                  </div>
+                    {variant.label}
+                  </button>
 
-                  {/* Large Finger-Friendly (-) Count (+) Stepper */}
-                  <div className="flex items-center bg-slate-900 border border-slate-700/90 rounded-lg overflow-hidden flex-1 justify-between max-w-[200px] landscape:max-w-none mx-auto">
+                  {/* Compact Stepper (Strictly toggles in multiples of minQty) */}
+                  <div className="flex items-center bg-slate-900 border border-slate-700/90 rounded-lg overflow-hidden justify-between flex-1">
                     {/* Big Minus Button */}
                     <button
-                      onClick={() => handleUpdateQty(photo, option, currentQty - (photo.defaultQuantity >= 12 ? 6 : 1))}
+                      onClick={() => {
+                        const target = currentQty <= minQty ? 0 : currentQty - minQty;
+                        handleUpdateQty(photo, variant.key, target);
+                      }}
                       disabled={currentQty <= 0}
                       className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center transition rounded-l-md active:scale-90 ${
                         currentQty > 0 
@@ -588,7 +603,7 @@ export function Home() {
                       }`}
                       title="Decrease Quantity"
                     >
-                      <Minus size={15} strokeWidth={2.5} />
+                      <Minus size={13} strokeWidth={3} />
                     </button>
 
                     {/* Centered Quantity Number */}
@@ -599,13 +614,13 @@ export function Home() {
                     {/* Big Plus Button (Amber high visibility) */}
                     <button
                       onClick={() => {
-                        const step = photo.defaultQuantity >= 12 ? 6 : 1;
-                        handleUpdateQty(photo, option, currentQty === 0 ? photo.defaultQuantity : currentQty + step);
+                        const target = currentQty === 0 ? minQty : currentQty + minQty;
+                        handleUpdateQty(photo, variant.key, target);
                       }}
                       className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-500 hover:bg-amber-400 active:bg-amber-300 text-black flex items-center justify-center transition font-black rounded-r-md active:scale-90 shadow-sm"
-                      title="Increase Quantity / Add"
+                      title={`Add ${minQty} pcs`}
                     >
-                      <Plus size={15} strokeWidth={2.5} />
+                      <Plus size={13} strokeWidth={3} />
                     </button>
                   </div>
                 </div>

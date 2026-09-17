@@ -54,8 +54,9 @@ export function Cart() {
               <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl overflow-hidden p-0.5">
                 <button 
                   onClick={() => {
-                    const step = item.quantity >= 12 ? 6 : 1;
-                    updateCartItemQuantity(idx, item.quantity - step);
+                    const minQty = item.defaultQuantity || 6;
+                    const target = item.quantity <= minQty ? 0 : item.quantity - minQty;
+                    updateCartItemQuantity(idx, target);
                   }}
                   className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-200 active:scale-90 rounded-lg transition"
                   title="Decrease"
@@ -68,8 +69,9 @@ export function Cart() {
                 </div>
                 <button 
                   onClick={() => {
-                    const step = item.quantity >= 12 ? 6 : 1;
-                    updateCartItemQuantity(idx, item.quantity + step);
+                    const minQty = item.defaultQuantity || 6;
+                    const target = item.quantity + minQty;
+                    updateCartItemQuantity(idx, target);
                   }}
                   className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-amber-500 hover:bg-amber-400 text-black font-black active:scale-90 rounded-lg transition"
                   title="Increase"
