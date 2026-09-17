@@ -40,23 +40,56 @@ export interface CatalogPhoto {
   description: string;
 }
 
+export interface ShowroomVideo {
+  id: string;
+  videoUri: string;
+  imageUri?: string;
+  photoCode?: string;
+  subCategoryName?: string;
+  subCategoryId?: string;
+  categoryId?: string;
+  title?: string;
+  sortOrder?: number;
+}
+
 export interface Customer {
-  customerCode: string;
+  customerId: string;
+  customerCode: string; // backwards compatibility
   shopName: string;
-  cityName: string;
-  mobileNumber: string;
-  contactPerson: string;
-  address: string;
+  ownerName: string;
+  phone: string;
+  city: string;
+  address?: string;
+  createdAt?: number | any;
+  // Legacy aliases
+  contactPerson?: string;
+  mobileNumber?: string;
+  cityName?: string;
 }
 
 export interface ChatMessage {
   id: string;
   customerCode: string;
+  customerId?: string;
+  shopName?: string;
   sender: 'customer' | 'admin';
   text?: string;
   imageUri?: string;
   audioUri?: string;
   timestamp: number;
+}
+
+export interface CommunityPost {
+  postId: string;
+  id: string;
+  customerId: string;
+  customerCode?: string;
+  shopName: string;
+  imageUrl: string;
+  caption: string;
+  timestamp: any;
+  likesCount: number;
+  likedBy?: string[];
 }
 
 export interface OrderCartItem {
@@ -67,22 +100,47 @@ export interface OrderCartItem {
   subCategoryName: string;
   optionLetter: string;
   quantity: number;
+  // Dashboard item format fields
+  id?: string;
+  name?: string;
+  variant?: string;
+  price?: number;
+}
+
+export interface StandardOrderItem {
+  id: string;
+  photoCode: string;
+  name: string;
+  quantity: number;
+  variant: string;
+  price: number;
+  // Optional extra metadata
+  photoId?: string;
+  imageUri?: string;
+  categoryId?: string;
+  subCategoryName?: string;
 }
 
 export interface WholesaleOrder {
+  orderId: string;
   id: string;
-  orderNumber: string;
+  customerId: string;
   customerCode: string;
   shopName: string;
-  cityName: string;
-  mobileNumber: string;
-  items: OrderCartItem[];
+  cityName?: string;
+  mobileNumber?: string;
+  items: (OrderCartItem | StandardOrderItem)[];
   totalItemsCount: number;
-  imitationStatus: string; // PENDING, DONE, NOT_APPLICABLE
-  cosmeticsStatus: string;
-  hairStatus: string;
-  overallStatus: string; // RECEIVED, PARTIALLY_PACKED, READY_TO_SHIP, DISPATCHED
-  notes: string;
+  totalAmount: number;
+  orderNote: string;
+  voiceNoteUrl?: string | null;
+  status: 'Pending' | 'Processing' | 'Dispatched' | string;
+  imitationStatus?: string; // PENDING, DONE, NOT_APPLICABLE
+  cosmeticsStatus?: string;
+  hairStatus?: string;
+  overallStatus?: string; // RECEIVED, PARTIALLY_PACKED, READY_TO_SHIP, DISPATCHED
+  notes?: string;
   voiceNoteUri?: string;
-  createdAt: number;
+  orderNumber?: string;
+  createdAt: any;
 }

@@ -2,13 +2,21 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { 
   db, 
-  COLLECTIONS, 
-  seedInitialDataIfEmpty, 
-  syncPhotoToFirebase, 
-  syncCustomerToFirebase 
+  COLLECTIONS,
+  handleFirestoreError,
+  OperationType 
 } from './firebase';
-import { useAppStore, defaultPhotos, defaultCategories, defaultSubCategories, defaultCustomers } from './store';
-import { CatalogPhoto, WholesaleOrder, Customer, ChatMessage } from './types';
+import { useAppStore } from './store';
+import { 
+  CatalogPhoto, 
+  ShowroomVideo, 
+  WholesaleOrder, 
+  Customer, 
+  ChatMessage, 
+  CategoryItem, 
+  SubCategory,
+  CommunityPost 
+} from './types';
 
 export function useFirebaseSync() {
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
@@ -16,81 +24,337 @@ export function useFirebaseSync() {
 
   useEffect(() => {
     let unsubscribePhotos: (() => void) | null = null;
+    let unsubscribeCatalogPhotos: (() => void) | null = null;
+    let unsubscribeShowroomVideos: (() => void) | null = null;
+    let unsubscribeCategories: (() => void) | null = null;
+    let unsubscribeSubCategories: (() => void) | null = null;
     let unsubscribeOrders: (() => void) | null = null;
     let unsubscribeCustomers: (() => void) | null = null;
     let unsubscribeMessages: (() => void) | null = null;
+    let unsubscribeAltMessages: (() => void) | null = null;
+    let unsubscribeCommunityPosts: (() => void) | null = null;
+
+    // Track messages from both 'chat_messages' and 'messages'
+    const chatMessagesMap = new Map<string, ChatMessage>();
+    const altMessagesMap = new Map<string, ChatMessage>();
+
+    // Track photos from both 'photos' and 'catalog_photos' to merge them seamlessly
+    const photosCollectionMap = new Map<string, CatalogPhoto>();
+    const catalogPhotosCollectionMap = new Map<string, CatalogPhoto>();
+
+    const updateMergedMessages = () => {
+      const merged = new Map<string, ChatMessage>();
+      altMessagesMap.forEach((m, id) => merged.set(id, m));
+      chatMessagesMap.forEach((m, id) => merged.set(id, m));
+      const allMsgs = Array.from(merged.values());
+      allMsgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      useAppStore.setState({ messages: allMsgs });
+    };
+
+    function normalizeMessage(doc: any): ChatMessage {
+      const data = doc.data() as any;
+      const msgTimestamp = data.timestamp?.toMillis 
+        ? data.timestamp.toMillis() 
+        : (typeof data.timestamp === 'number' ? data.timestamp : (data.createdAt || Date.now()));
+
+      return {
+        id: data.id || data.messageId || doc.id,
+        customerCode: data.customerCode || data.customerId || '',
+        customerId: data.customerId || data.customerCode || '',
+        shopName: data.shopName || '',
+        sender: data.sender || 'customer',
+        text: data.text || data.message || '',
+        imageUri: data.imageUri || data.imageUrl || undefined,
+        audioUri: data.audioUri || data.audioUrl || undefined,
+        timestamp: msgTimestamp
+      };
+    }
+
+    const updateMergedPhotos = () => {
+      const mergedMap = new Map<string, CatalogPhoto>();
+      
+      // Add items from catalog_photos first
+      catalogPhotosCollectionMap.forEach((p, id) => {
+        mergedMap.set(id, p);
+      });
+
+      // Add/overwrite with items from photos
+      photosCollectionMap.forEach((p, id) => {
+        mergedMap.set(id, p);
+      });
+
+      const allPhotos = Array.from(mergedMap.values());
+      allPhotos.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      if (allPhotos.length > 0) {
+        useAppStore.setState({ photos: allPhotos });
+      }
+    };
+
+    function normalizePhoto(doc: any): CatalogPhoto {
+      const data = doc.data() as any;
+      return {
+        id: data.id || doc.id,
+        categoryId: data.categoryId || data.category || '',
+        subCategoryId: data.subCategoryId || data.subCategory || data.sub_category_id || '',
+        subCategoryName: data.subCategoryName || data.subCategoryTitle || data.subCategory || '',
+        photoCode: data.photoCode || data.code || data.title || doc.id,
+        imageUri: data.imageUri || data.imageUrl || data.image || data.url || data.photoUrl || '',
+        videoUri: data.videoUri || data.videoUrl || data.video || undefined,
+        itemCount: typeof data.itemCount === 'number' ? data.itemCount : 4,
+        aAvailable: data.aAvailable !== undefined ? data.aAvailable : (data.a !== undefined ? data.a : true),
+        bAvailable: data.bAvailable !== undefined ? data.bAvailable : (data.b !== undefined ? data.b : true),
+        cAvailable: data.cAvailable !== undefined ? data.cAvailable : (data.c !== undefined ? data.c : true),
+        dAvailable: data.dAvailable !== undefined ? data.dAvailable : (data.d !== undefined ? data.d : true),
+        defaultQuantity: typeof data.defaultQuantity === 'number' ? data.defaultQuantity : 6,
+        sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0,
+        description: data.description || ''
+      };
+    }
 
     async function initSync() {
       try {
-        // 1. Check & Seed initial catalog if database is fresh
-        await seedInitialDataIfEmpty(defaultPhotos, defaultCategories, defaultSubCategories);
-
-        // Also seed initial default customers if needed
-        defaultCustomers.forEach(cust => {
-          syncCustomerToFirebase(cust).catch(() => {});
+        // 1. Real-time listener for Categories from 'categories'
+        const catCol = collection(db, COLLECTIONS.CATEGORIES);
+        unsubscribeCategories = onSnapshot(catCol, (snapshot) => {
+          if (!snapshot.empty) {
+            const fetchedCats: CategoryItem[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data() as any;
+              fetchedCats.push({
+                id: data.id || doc.id,
+                displayName: data.displayName || data.name || data.title || doc.id,
+                thumbnailUrl: data.thumbnailUrl || data.imageUri || data.imageUrl || data.image || '',
+                accentColorHex: data.accentColorHex || data.accentColor || data.color || '#F59E0B',
+                sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
+              });
+            });
+            fetchedCats.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+            useAppStore.setState({ categories: fetchedCats });
+          }
+        }, (err) => {
+          handleFirestoreError(err, OperationType.GET, COLLECTIONS.CATEGORIES);
         });
 
-        // 2. Real-time listener for Catalog Photos
+        // 2. Real-time listener for SubCategories from 'subCategories'
+        const subCatCol = collection(db, COLLECTIONS.SUBCATEGORIES);
+        unsubscribeSubCategories = onSnapshot(subCatCol, (snapshot) => {
+          if (!snapshot.empty) {
+            const fetchedSubs: SubCategory[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data() as any;
+              fetchedSubs.push({
+                id: data.id || doc.id,
+                categoryId: data.categoryId || data.category || '',
+                name: data.name || data.displayName || data.title || doc.id,
+                iconName: data.iconName || data.icon || 'sparkles',
+                thumbnailUrl: data.thumbnailUrl || data.imageUri || data.imageUrl || data.image || '',
+                photoCount: typeof data.photoCount === 'number' ? data.photoCount : 0,
+                sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
+              });
+            });
+            fetchedSubs.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+            useAppStore.setState({ subCategories: fetchedSubs });
+          }
+        }, (err) => {
+          handleFirestoreError(err, OperationType.GET, COLLECTIONS.SUBCATEGORIES);
+        });
+
+        // 3. Real-time listener for Products/Photos from 'photos'
         const photosCol = collection(db, COLLECTIONS.PHOTOS);
         unsubscribePhotos = onSnapshot(photosCol, (snapshot) => {
-          if (!snapshot.empty) {
-            const fetchedPhotos: CatalogPhoto[] = [];
-            snapshot.forEach((doc) => {
-              fetchedPhotos.push(doc.data() as CatalogPhoto);
-            });
-            // Sort by sortOrder or photoCode
-            fetchedPhotos.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-            useAppStore.setState({ photos: fetchedPhotos });
-          } else {
-            // If empty, upload defaults
-            defaultPhotos.forEach(p => syncPhotoToFirebase(p));
-          }
+          photosCollectionMap.clear();
+          snapshot.forEach((doc) => {
+            const photo = normalizePhoto(doc);
+            photosCollectionMap.set(photo.id, photo);
+          });
+          updateMergedPhotos();
           setIsFirebaseConnected(true);
           setSyncStatus('synced');
         }, (err) => {
-          console.error('Photos onSnapshot error:', err);
-          setSyncStatus('error');
+          handleFirestoreError(err, OperationType.GET, COLLECTIONS.PHOTOS);
         });
 
-        // 3. Real-time listener for Wholesale Orders
+        // 4. Real-time listener for Products/Photos from 'catalog_photos' (fallback collection)
+        try {
+          const catalogPhotosCol = collection(db, COLLECTIONS.CATALOG_PHOTOS);
+          unsubscribeCatalogPhotos = onSnapshot(catalogPhotosCol, (snapshot) => {
+            catalogPhotosCollectionMap.clear();
+            snapshot.forEach((doc) => {
+              const photo = normalizePhoto(doc);
+              catalogPhotosCollectionMap.set(photo.id, photo);
+            });
+            updateMergedPhotos();
+            setIsFirebaseConnected(true);
+            setSyncStatus('synced');
+          }, (err) => {
+            console.warn('catalog_photos collection listener skipped (reading directly from photos):', err.message);
+          });
+        } catch (e) {
+          console.warn('catalog_photos listener init skipped:', e);
+        }
+
+        // 5. Real-time listener for Showroom Videos from 'showroomVideos'
+        const showroomVideosCol = collection(db, COLLECTIONS.SHOWROOM_VIDEOS);
+        unsubscribeShowroomVideos = onSnapshot(showroomVideosCol, (snapshot) => {
+          if (!snapshot.empty) {
+            const fetchedVideos: ShowroomVideo[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data() as any;
+              fetchedVideos.push({
+                id: data.id || doc.id,
+                videoUri: data.videoUri || data.videoUrl || data.video || data.url || '',
+                imageUri: data.imageUri || data.imageUrl || data.image || data.thumbnailUrl || data.poster || '',
+                photoCode: data.photoCode || data.code || data.title || doc.id,
+                subCategoryName: data.subCategoryName || data.subCategoryTitle || data.subCategory || '',
+                subCategoryId: data.subCategoryId || data.subCategory || '',
+                categoryId: data.categoryId || data.category || '',
+                title: data.title || data.name || '',
+                sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
+              });
+            });
+            fetchedVideos.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+            useAppStore.setState({ showroomVideos: fetchedVideos });
+          }
+        }, (err) => {
+          handleFirestoreError(err, OperationType.GET, COLLECTIONS.SHOWROOM_VIDEOS);
+        });
+
+        // 6. Real-time listener for Wholesale Orders from 'orders'
         const ordersCol = collection(db, COLLECTIONS.ORDERS);
         unsubscribeOrders = onSnapshot(ordersCol, (snapshot) => {
           const fetchedOrders: WholesaleOrder[] = [];
           snapshot.forEach((doc) => {
-            fetchedOrders.push(doc.data() as WholesaleOrder);
+            const data = doc.data() as any;
+            const orderTimestamp = data.createdAt?.toMillis 
+              ? data.createdAt.toMillis() 
+              : (typeof data.createdAt === 'number' ? data.createdAt : Date.now());
+
+            fetchedOrders.push({
+              orderId: data.orderId || data.id || doc.id,
+              id: data.id || data.orderId || doc.id,
+              customerId: data.customerId || data.customerCode || '',
+              customerCode: data.customerCode || data.customerId || '',
+              shopName: data.shopName || '',
+              cityName: data.cityName || '',
+              mobileNumber: data.mobileNumber || '',
+              items: Array.isArray(data.items) ? data.items : [],
+              totalItemsCount: typeof data.totalItemsCount === 'number' 
+                ? data.totalItemsCount 
+                : (Array.isArray(data.items) ? data.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0),
+              totalAmount: typeof data.totalAmount === 'number' ? data.totalAmount : 0,
+              orderNote: data.orderNote || data.notes || '',
+              notes: data.notes || data.orderNote || '',
+              voiceNoteUrl: data.voiceNoteUrl || data.voiceNoteUri || null,
+              voiceNoteUri: data.voiceNoteUri || data.voiceNoteUrl || undefined,
+              status: data.status || data.overallStatus || 'Pending',
+              overallStatus: data.overallStatus || data.status || 'Pending',
+              imitationStatus: data.imitationStatus || 'PENDING',
+              cosmeticsStatus: data.cosmeticsStatus || 'PENDING',
+              hairStatus: data.hairStatus || 'PENDING',
+              createdAt: orderTimestamp
+            });
           });
           fetchedOrders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
           useAppStore.setState({ orders: fetchedOrders });
         }, (err) => {
-          console.error('Orders onSnapshot error:', err);
+          handleFirestoreError(err, OperationType.GET, COLLECTIONS.ORDERS);
         });
 
-        // 4. Real-time listener for Customers
+        // 7. Real-time listener for Customers from 'customers'
         const customersCol = collection(db, COLLECTIONS.CUSTOMERS);
         unsubscribeCustomers = onSnapshot(customersCol, (snapshot) => {
           if (!snapshot.empty) {
             const fetchedCust: Customer[] = [];
             snapshot.forEach((doc) => {
-              fetchedCust.push(doc.data() as Customer);
+              const data = doc.data() as any;
+              const custId = data.customerId || data.customerCode || doc.id;
+              fetchedCust.push({
+                customerId: custId,
+                customerCode: custId,
+                shopName: data.shopName || '',
+                ownerName: data.ownerName || data.contactPerson || '',
+                phone: data.phone || data.mobileNumber || '',
+                city: data.city || data.cityName || '',
+                address: data.address || '',
+                contactPerson: data.ownerName || data.contactPerson || '',
+                mobileNumber: data.phone || data.mobileNumber || '',
+                cityName: data.city || data.cityName || '',
+                createdAt: data.createdAt || 0
+              });
             });
             useAppStore.setState({ customers: fetchedCust });
+
+            // If current customer is selected, update it with fresh doc data
+            const currentCust = useAppStore.getState().currentCustomer;
+            if (currentCust) {
+              const updatedCurrent = fetchedCust.find(c => 
+                c.customerId === currentCust.customerId || c.customerCode === currentCust.customerCode
+              );
+              if (updatedCurrent) {
+                useAppStore.setState({ currentCustomer: updatedCurrent });
+              }
+            }
           }
         }, (err) => {
-          console.error('Customers onSnapshot error:', err);
+          handleFirestoreError(err, OperationType.GET, COLLECTIONS.CUSTOMERS);
         });
 
-        // 5. Real-time listener for Chat Messages
+        // 8. Real-time listener for Community Posts from 'community_posts'
+        const communityCol = collection(db, COLLECTIONS.COMMUNITY_POSTS);
+        unsubscribeCommunityPosts = onSnapshot(communityCol, (snapshot) => {
+          const fetchedPosts: CommunityPost[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            const postTimestamp = data.timestamp?.toMillis 
+              ? data.timestamp.toMillis() 
+              : (typeof data.timestamp === 'number' ? data.timestamp : (data.createdAt || Date.now()));
+
+            fetchedPosts.push({
+              postId: data.postId || data.id || doc.id,
+              id: data.id || data.postId || doc.id,
+              customerId: data.customerId || data.customerCode || '',
+              customerCode: data.customerCode || data.customerId || '',
+              shopName: data.shopName || '',
+              imageUrl: data.imageUrl || data.image || '',
+              caption: data.caption || data.message || data.text || '',
+              likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
+              likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
+              timestamp: postTimestamp
+            });
+          });
+          fetchedPosts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+          useAppStore.setState({ communityPosts: fetchedPosts });
+        }, (err) => {
+          handleFirestoreError(err, OperationType.GET, COLLECTIONS.COMMUNITY_POSTS);
+        });
+
+        // 9. Real-time listener for Chat Messages from 'chat_messages'
         const messagesCol = collection(db, COLLECTIONS.MESSAGES);
         unsubscribeMessages = onSnapshot(messagesCol, (snapshot) => {
-          const fetchedMsgs: ChatMessage[] = [];
+          chatMessagesMap.clear();
           snapshot.forEach((doc) => {
-            fetchedMsgs.push(doc.data() as ChatMessage);
+            const msg = normalizeMessage(doc);
+            chatMessagesMap.set(msg.id, msg);
           });
-          fetchedMsgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-          useAppStore.setState({ messages: fetchedMsgs });
+          updateMergedMessages();
         }, (err) => {
-          console.error('Messages onSnapshot error:', err);
+          handleFirestoreError(err, OperationType.GET, COLLECTIONS.MESSAGES);
         });
+
+        // 10. Real-time listener for alternate 'messages' collection
+        try {
+          const altMessagesCol = collection(db, 'messages');
+          unsubscribeAltMessages = onSnapshot(altMessagesCol, (snapshot) => {
+            altMessagesMap.clear();
+            snapshot.forEach((doc) => {
+              const msg = normalizeMessage(doc);
+              altMessagesMap.set(msg.id, msg);
+            });
+            updateMergedMessages();
+          }, () => {
+            // Ignored if alternate collection is not present
+          });
+        } catch {}
 
       } catch (err) {
         console.error('Error in initSync:', err);
@@ -101,10 +365,16 @@ export function useFirebaseSync() {
     initSync();
 
     return () => {
+      if (unsubscribeCategories) unsubscribeCategories();
+      if (unsubscribeSubCategories) unsubscribeSubCategories();
       if (unsubscribePhotos) unsubscribePhotos();
+      if (unsubscribeCatalogPhotos) unsubscribeCatalogPhotos();
+      if (unsubscribeShowroomVideos) unsubscribeShowroomVideos();
       if (unsubscribeOrders) unsubscribeOrders();
       if (unsubscribeCustomers) unsubscribeCustomers();
+      if (unsubscribeCommunityPosts) unsubscribeCommunityPosts();
       if (unsubscribeMessages) unsubscribeMessages();
+      if (unsubscribeAltMessages) unsubscribeAltMessages();
     };
   }, []);
 

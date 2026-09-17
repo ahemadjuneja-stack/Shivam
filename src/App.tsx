@@ -1,6 +1,5 @@
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import { Home } from './pages/Home';
-import { AdminDashboard } from './pages/AdminDashboard';
 import { CategoryGallery } from './pages/CategoryGallery';
 import { SubCategoryGallery } from './pages/SubCategoryGallery';
 import { Cart } from './pages/Cart';
@@ -12,18 +11,20 @@ import {
   Trash2, 
   Send, 
   CheckCircle2,
-  Store,
   Minus,
   Plus,
   Mic,
   Square,
   MessageCircle,
-  Cloud
+  Cloud,
+  Edit3,
+  UserPlus,
+  Store
 } from 'lucide-react';
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { ChatModal } from './components/ChatModal';
 import { useFirebaseSync } from './useFirebaseSync';
-
+import { Customer } from './types';
 
 function VoiceRecorder() {
   const { orderVoiceNote, setOrderVoiceNote } = useAppStore();
@@ -142,9 +143,6 @@ function VoiceRecorder() {
 }
 
 function AppShell({ children }: { children: React.ReactNode }) {
-  const location = useLocation();
-  const isAdminRoute = location.pathname.startsWith('/admin');
-
   // Activate real-time multi-device cloud synchronization via Firebase Firestore
   const { isFirebaseConnected } = useFirebaseSync();
 
@@ -156,6 +154,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const currentCustomer = useAppStore(state => state.currentCustomer);
   const customers = useAppStore(state => state.customers);
   const setCurrentCustomer = useAppStore(state => state.setCurrentCustomer);
+  const addCustomer = useAppStore(state => state.addCustomer);
+  const updateCustomer = useAppStore(state => state.updateCustomer);
   
   const isCartOpen = useAppStore(state => state.isCartOpen);
   const setIsCartOpen = useAppStore(state => state.setIsCartOpen);
@@ -164,87 +164,119 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const orderNote = useAppStore(state => state.orderNote);
   const setOrderNote = useAppStore(state => state.setOrderNote);
 
+  const messages = useAppStore(state => state.messages);
+  const communityPosts = useAppStore(state => state.communityPosts);
+  const lastReadTimestamp = useAppStore(state => state.lastReadTimestamp);
+  const markMessagesAsRead = useAppStore(state => state.markMessagesAsRead);
+
+  const hasUnreadDot = messages.some(
+    m => (m.timestamp || 0) > (lastReadTimestamp || 0) && m.sender !== 'customer'
+  ) || communityPosts.some(
+    p => (p.timestamp || 0) > (lastReadTimestamp || 0)
+  );
+
   const [showLogin, setShowLogin] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [loginId, setLoginId] = useState('');
   const [orderSuccessMsg, setOrderSuccessMsg] = useState<string | null>(null);
 
+  // Profile Edit / Register Form states
+  const [modalMode, setModalMode] = useState<'view' | 'login' | 'register' | 'edit'>('login');
+  const [formData, setFormData] = useState({
+    shopName: '',
+    ownerName: '',
+    phone: '',
+    city: '',
+    address: ''
+  });
+
+  const openProfileModal = () => {
+    if (currentCustomer) {
+      setModalMode('view');
+      setFormData({
+        shopName: currentCustomer.shopName || '',
+        ownerName: currentCustomer.ownerName || currentCustomer.contactPerson || '',
+        phone: currentCustomer.phone || currentCustomer.mobileNumber || '',
+        city: currentCustomer.city || currentCustomer.cityName || '',
+        address: currentCustomer.address || ''
+      });
+    } else {
+      setModalMode('login');
+    }
+    setShowLogin(true);
+  };
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    const cust = customers.find(c => c.customerCode.toLowerCase() === loginId.trim().toLowerCase());
+    const query = loginId.trim().toLowerCase();
+    const cust = customers.find(c => 
+      c?.customerId?.toLowerCase() === query || 
+      c?.customerCode?.toLowerCase() === query ||
+      c?.shopName?.toLowerCase() === query
+    );
+
     if (cust) {
       setCurrentCustomer(cust);
       setShowLogin(false);
       setLoginId('');
     } else {
-      alert('Customer Code not found. Try CUST-101, CUST-102, or CUST-103.');
+      alert('Customer / Shop not found. You can register your shop below in 10 seconds!');
+      setModalMode('register');
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // 1. PC WEB ADMIN DASHBOARD LAYOUT (Full Screen, Desktop Friendly)
-  // ---------------------------------------------------------------------------
-  if (isAdminRoute) {
-    return (
-      <div className="min-h-screen w-full bg-slate-950 text-slate-100 font-sans antialiased flex flex-col pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
-        {/* PC Top Navigation Bar */}
-        <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-6 py-3 flex items-center justify-between shadow-xl">
-          <div className="flex items-center gap-4">
-            <Link to="/" className="flex items-center gap-2 group">
-              <img src="/icon.svg" alt="SHIVAM" className="w-8 h-8 rounded-lg shadow-md group-hover:scale-105 transition-transform" />
-              <div>
-                <h1 className="text-base font-black tracking-wider text-white flex items-center gap-2">
-                  <span>SHIVAM</span>
-                  <span className="text-xs px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold uppercase tracking-widest font-mono">
-                    Admin Portal (Web PC)
-                  </span>
-                </h1>
-              </div>
-            </Link>
-          </div>
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.shopName.trim() || !formData.ownerName.trim()) {
+      alert('Please enter your Shop Name and Owner Name.');
+      return;
+    }
 
-          <div className="flex items-center gap-3">
-            {/* Real-time Firebase Sync indicator */}
-            <div 
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition ${
-                isFirebaseConnected 
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
-                  : 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse'
-              }`}
-              title={isFirebaseConnected ? 'Firebase Cloud Live Database Synced' : 'Connecting to Firebase...'}
-            >
-              <Cloud size={13} />
-              <span>{isFirebaseConnected ? 'Cloud Synced' : 'Connecting...'}</span>
-            </div>
+    const generatedId = `CUST-${Math.floor(100 + Math.random() * 900)}`;
+    const newCust: Customer = {
+      customerId: generatedId,
+      customerCode: generatedId,
+      shopName: formData.shopName.trim(),
+      ownerName: formData.ownerName.trim(),
+      phone: formData.phone.trim(),
+      city: formData.city.trim(),
+      address: formData.address.trim(),
+      contactPerson: formData.ownerName.trim(),
+      mobileNumber: formData.phone.trim(),
+      cityName: formData.city.trim(),
+      createdAt: Date.now()
+    };
 
-            {/* Direct Switch to Mobile Showroom */}
-            <Link
-              to="/"
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition shadow-lg active:scale-95"
-              title="Open Mobile Showroom App"
-            >
-              <Store size={15} />
-              <span>Go to Showroom App</span>
-            </Link>
-          </div>
-        </header>
+    addCustomer(newCust);
+    setCurrentCustomer(newCust);
+    setShowLogin(false);
+    alert(`Welcome ${newCust.shopName}! Your Customer ID is ${generatedId}`);
+  };
 
-        {/* PC Admin Content Container */}
-        <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-          {children}
-        </main>
-      </div>
-    );
-  }
+  const handleUpdateProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCustomer) return;
 
-  // ---------------------------------------------------------------------------
-  // 2. SHOWROOM APP CONTAINER (Mobile Full Screen, with CSS rotation)
-  // ---------------------------------------------------------------------------
+    const custId = currentCustomer.customerId || currentCustomer.customerCode;
+    const updatedData: Partial<Customer> = {
+      shopName: formData.shopName.trim(),
+      ownerName: formData.ownerName.trim(),
+      phone: formData.phone.trim(),
+      city: formData.city.trim(),
+      address: formData.address.trim(),
+      contactPerson: formData.ownerName.trim(),
+      mobileNumber: formData.phone.trim(),
+      cityName: formData.city.trim()
+    };
+
+    updateCustomer(custId, updatedData);
+    setModalMode('view');
+    alert('Shop Profile updated successfully!');
+  };
+
   return (
     <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased overflow-hidden select-none pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] flex items-center justify-center">
       
-      
-
       {/* MOBILE SHOWROOM CONTAINER */}
       <div 
         className="relative bg-brand-navy-dark overflow-hidden flex flex-col transition-all duration-300 shadow-2xl w-full h-full"
@@ -275,25 +307,37 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="hidden xs:inline text-[9px]">{isFirebaseConnected ? 'Live' : '...'}</span>
               </div>
 
-              {/* Communicate / Chat Button */}
-              {currentCustomer && (
-                <button
-                  onClick={() => setIsChatOpen(true)}
-                  className="flex items-center gap-1 bg-brand-gold/10 border border-brand-gold/50 hover:bg-brand-gold hover:text-black text-brand-gold px-2.5 py-1 rounded-lg text-[11px] transition font-bold"
-                >
+              {/* Community Hub Button with Notification Dot */}
+              <button
+                onClick={() => {
+                  setIsChatOpen(true);
+                  markMessagesAsRead();
+                }}
+                className="relative flex items-center gap-1.5 bg-brand-gold/10 border border-brand-gold/50 hover:bg-brand-gold hover:text-black text-brand-gold px-2.5 py-1 rounded-lg text-[11px] transition font-bold"
+                title="Community Hub & Support Chat"
+              >
+                <div className="relative flex items-center justify-center">
                   <MessageCircle size={14} />
-                  <span className="hidden sm:inline">Communicate</span>
-                </button>
-              )}
+                  {hasUnreadDot && (
+                    <>
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-ping" />
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full border border-slate-900" />
+                    </>
+                  )}
+                </div>
+                <span className="hidden xs:inline">Community Hub</span>
+              </button>
 
-              {/* Customer Switcher / Login */}
+              {/* Customer Switcher / Profile */}
               <button 
-                onClick={() => setShowLogin(true)}
+                onClick={openProfileModal}
                 className="flex items-center gap-1 bg-slate-900 border border-slate-700 hover:border-brand-gold px-2.5 py-1 rounded-lg text-[11px] transition"
               >
                 <UserCircle size={14} className="text-brand-gold" />
                 {currentCustomer ? (
-                  <span className="font-bold text-brand-gold-light">Profile</span>
+                  <span className="font-bold text-brand-gold-light truncate max-w-[90px]">
+                    {currentCustomer.shopName || currentCustomer.customerId}
+                  </span>
                 ) : (
                   <span className="font-bold text-white">Login</span>
                 )}
@@ -305,6 +349,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 className="relative flex items-center justify-center bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black w-7 h-7 rounded-lg transition shadow-md active:scale-95"
               >
                 <ShoppingBag size={16} />
+                {cart.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black rounded-full w-4 h-4 flex items-center justify-center border border-black shadow">
+                    {cart.length}
+                  </span>
+                )}
               </button>
             </div>
           </header>
@@ -412,6 +461,24 @@ function AppShell({ children }: { children: React.ReactNode }) {
           {/* Right/Bottom Side Panel: Customer, Notes, and Dispatch */}
           <div className="w-full landscape:w-[350px] md:landscape:w-[400px] bg-slate-900 border-t landscape:border-t-0 landscape:border-l border-slate-800 flex flex-col shadow-2xl flex-shrink-0 h-auto landscape:h-full z-10 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
             
+            {/* Customer info preview inside cart */}
+            <div className="p-3 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between">
+              <div>
+                <div className="text-[10px] text-slate-400 uppercase font-bold">Ordering as:</div>
+                <div className="font-black text-white text-xs">
+                  {currentCustomer ? `${currentCustomer.shopName} (${currentCustomer.customerId || currentCustomer.customerCode})` : 'Not logged in'}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  openProfileModal();
+                }}
+                className="text-xs text-amber-400 hover:underline font-bold"
+              >
+                {currentCustomer ? 'Change' : 'Login'}
+              </button>
+            </div>
+
             {/* Notes Section - Can expand flex-1 in landscape */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               <div className="flex flex-col gap-2">
@@ -437,7 +504,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   disabled={cart.length === 0}
                   onClick={() => {
                     if (!currentCustomer) {
-                      setShowLogin(true);
+                      openProfileModal();
                       return;
                     }
                     placeOrder();
@@ -456,131 +523,338 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Customer Login / Profile Modal */}
+      {/* Customer Login / Profile / Register Modal */}
       {showLogin && (
-        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-[110] p-4 backdrop-blur-sm">
-          <div className="bg-brand-navy-card border border-brand-navy-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
-              <h2 className="text-lg font-black text-white">{currentCustomer ? 'Customer Profile' : 'Select / Enter Customer'}</h2>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[110] p-4 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-brand-navy-card border border-brand-navy-border rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            
+            <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3 flex-shrink-0">
+              <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                <Store className="text-brand-gold" size={20} />
+                {modalMode === 'view' && 'Customer Shop Profile'}
+                {modalMode === 'login' && 'Select / Login Customer'}
+                {modalMode === 'register' && 'Register New Shop'}
+                {modalMode === 'edit' && 'Edit Shop Profile'}
+              </h2>
               <button onClick={() => setShowLogin(false)} className="text-slate-400 hover:text-white">
                 <X size={20} />
               </button>
             </div>
 
-            {currentCustomer ? (
-              <div className="space-y-4">
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-sm space-y-3">
-                  <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-500">Shop Name</label>
-                    <div className="font-bold text-white text-base">{currentCustomer.shopName}</div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-500">Customer Name</label>
-                    <div className="font-medium text-slate-300">{currentCustomer.contactPerson}</div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-500">Mobile Number</label>
-                      <div className="font-medium text-slate-300">{currentCustomer.mobileNumber}</div>
+            <div className="overflow-y-auto flex-1 pr-1 scrollbar-thin">
+              
+              {/* MODE 1: VIEW LOGGED-IN CUSTOMER PROFILE */}
+              {modalMode === 'view' && currentCustomer && (
+                <div className="space-y-4">
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-sm space-y-3">
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500">Shop Name</label>
+                      <div className="font-bold text-white text-base">{currentCustomer.shopName}</div>
                     </div>
                     <div>
-                      <label className="text-[10px] uppercase font-bold text-slate-500">Code</label>
-                      <div className="font-mono font-bold text-brand-gold bg-black/40 px-2 py-0.5 rounded border border-slate-800">{currentCustomer.customerCode}</div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500">Owner Name</label>
+                      <div className="font-medium text-slate-200">{currentCustomer.ownerName || currentCustomer.contactPerson}</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500">Phone</label>
+                        <div className="font-medium text-slate-200">{currentCustomer.phone || currentCustomer.mobileNumber || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500">Customer ID</label>
+                        <div className="font-mono font-bold text-brand-gold bg-black/40 px-2 py-0.5 rounded border border-slate-800 inline-block">
+                          {currentCustomer.customerId || currentCustomer.customerCode}
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500">City & Address</label>
+                      <div className="font-medium text-slate-300">
+                        {currentCustomer.city || currentCustomer.cityName}
+                        {currentCustomer.address ? ` • ${currentCustomer.address}` : ''}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2">
+                    <button
+                      onClick={() => setModalMode('edit')}
+                      className="px-4 py-2 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition"
+                    >
+                      <Edit3 size={14} />
+                      <span>Edit Details</span>
+                    </button>
+
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => {
+                          setCurrentCustomer(null);
+                          setModalMode('login');
+                        }}
+                        className="px-4 py-2 rounded-xl font-bold text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition"
+                      >
+                        Switch / Logout
+                      </button>
+                      <button 
+                        onClick={() => setShowLogin(false)} 
+                        className="px-4 py-2 rounded-xl font-bold text-xs bg-amber-500 text-black hover:bg-amber-400 transition"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 2: EDIT PROFILE */}
+              {modalMode === 'edit' && (
+                <form onSubmit={handleUpdateProfile} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">Shop Name *</label>
+                    <input
+                      type="text"
+                      value={formData.shopName}
+                      onChange={e => setFormData({ ...formData, shopName: e.target.value })}
+                      required
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">Owner Name *</label>
+                    <input
+                      type="text"
+                      value={formData.ownerName}
+                      onChange={e => setFormData({ ...formData, ownerName: e.target.value })}
+                      required
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-1">Phone *</label>
+                      <input
+                        type="tel"
+                        value={formData.phone}
+                        onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                        required
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-1">City *</label>
+                      <input
+                        type="text"
+                        value={formData.city}
+                        onChange={e => setFormData({ ...formData, city: e.target.value })}
+                        required
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
+                      />
                     </div>
                   </div>
                   <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-500">Address</label>
-                    <div className="font-medium text-slate-300">{currentCustomer.address}, {currentCustomer.cityName}</div>
-                  </div>
-                </div>
-                
-                <div className="flex justify-end gap-2 pt-2">
-                  <button 
-                    type="button" 
-                    onClick={() => setShowLogin(false)} 
-                    className="px-4 py-2 rounded-xl font-bold text-xs text-slate-400 hover:text-white"
-                  >
-                    Close
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setCurrentCustomer(null);
-                      setShowLogin(false);
-                    }}
-                    className="px-5 py-2 rounded-xl font-black text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition"
-                  >
-                    Logout
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* Fast Quick Select from Existing Accounts */}
-                <div className="mb-4">
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                    Quick Select Registered Shop:
-                  </label>
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
-                    {customers.map(c => (
-                      <button
-                        key={c.customerCode}
-                        type="button"
-                        onClick={() => {
-                          setCurrentCustomer(c);
-                          setShowLogin(false);
-                        }}
-                        className={`w-full p-2.5 rounded-xl text-left border flex items-center justify-between transition bg-slate-900/80 border-slate-800 hover:border-slate-700 text-slate-200`}
-                      >
-                        <div>
-                          <div className="font-bold text-xs">{c.shopName}</div>
-                          <div className="text-[11px] text-slate-400">{c.cityName} • {c.mobileNumber}</div>
-                        </div>
-                        <span className="font-mono text-xs font-bold text-brand-gold bg-black/40 px-2 py-0.5 rounded">
-                          {c.customerCode}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="relative my-4">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-slate-800" />
-                  </div>
-                  <div className="relative flex justify-center text-[10px] uppercase font-bold text-slate-500">
-                    <span className="bg-brand-navy-card px-2">Or enter ID manually</span>
-                  </div>
-                </div>
-
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">Address / Landmark</label>
                     <input
                       type="text"
-                      placeholder="Enter Customer Code (e.g. CUST-101)"
-                      value={loginId}
-                      onChange={e => setLoginId(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white font-mono placeholder:text-slate-500 focus:outline-none focus:border-brand-gold text-sm"
-                      required
+                      value={formData.address}
+                      onChange={e => setFormData({ ...formData, address: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
                     />
                   </div>
-                  <div className="flex justify-end gap-2">
-                    <button 
-                      type="button" 
-                      onClick={() => setShowLogin(false)} 
-                      className="px-4 py-2 rounded-xl font-bold text-xs text-slate-400 hover:text-white"
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setModalMode('view')}
+                      className="px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white"
                     >
                       Cancel
                     </button>
-                    <button 
-                      type="submit" 
-                      className="px-5 py-2 rounded-xl font-black text-xs bg-brand-gold text-black hover:bg-brand-gold-light transition"
+                    <button
+                      type="submit"
+                      className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black rounded-xl text-xs transition"
                     >
-                      Confirm Customer
+                      Save to Cloud
                     </button>
                   </div>
                 </form>
-              </>
-            )}
+              )}
+
+              {/* MODE 3: LOGIN / QUICK SELECT */}
+              {modalMode === 'login' && (
+                <div className="space-y-4">
+                  
+                  {/* Quick Select */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                        Registered Shops:
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData({ shopName: '', ownerName: '', phone: '', city: '', address: '' });
+                          setModalMode('register');
+                        }}
+                        className="text-amber-400 hover:underline text-xs font-bold flex items-center gap-1"
+                      >
+                        <UserPlus size={13} />
+                        <span>+ Register New Shop</span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
+                      {customers.map(c => {
+                        const cid = c.customerId || c.customerCode;
+                        return (
+                          <button
+                            key={cid}
+                            type="button"
+                            onClick={() => {
+                              setCurrentCustomer(c);
+                              setShowLogin(false);
+                            }}
+                            className="w-full p-2.5 rounded-xl text-left border flex items-center justify-between transition bg-slate-900/80 border-slate-800 hover:border-slate-700 text-slate-200"
+                          >
+                            <div>
+                              <div className="font-bold text-xs text-white">{c.shopName}</div>
+                              <div className="text-[11px] text-slate-400">
+                                {c.ownerName || c.contactPerson} • {c.city || c.cityName}
+                              </div>
+                            </div>
+                            <span className="font-mono text-xs font-bold text-brand-gold bg-black/40 px-2 py-0.5 rounded">
+                              {cid}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="relative my-3">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-slate-800" />
+                    </div>
+                    <div className="relative flex justify-center text-[10px] uppercase font-bold text-slate-500">
+                      <span className="bg-brand-navy-card px-2">Or enter ID manually</span>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleLogin} className="space-y-3">
+                    <div>
+                      <input
+                        type="text"
+                        placeholder="Enter Customer Code / ID (e.g. CUST-101)"
+                        value={loginId}
+                        onChange={e => setLoginId(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white font-mono placeholder:text-slate-500 focus:outline-none focus:border-brand-gold text-sm"
+                        required
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button 
+                        type="button" 
+                        onClick={() => setShowLogin(false)} 
+                        className="px-4 py-2 rounded-xl font-bold text-xs text-slate-400 hover:text-white"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="submit" 
+                        className="px-5 py-2 rounded-xl font-black text-xs bg-brand-gold text-black hover:bg-brand-gold-light transition"
+                      >
+                        Login Shop
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* MODE 4: REGISTER NEW CUSTOMER SHOP */}
+              {modalMode === 'register' && (
+                <form onSubmit={handleRegister} className="space-y-3">
+                  <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl text-xs text-amber-300 mb-2">
+                    Create your wholesale account to place direct orders and access the community feed.
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">Shop / Business Name *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Rajesh Cosmetics & Jewelry"
+                      value={formData.shopName}
+                      onChange={e => setFormData({ ...formData, shopName: e.target.value })}
+                      required
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">Owner / Contact Name *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Rajesh Kumar"
+                      value={formData.ownerName}
+                      onChange={e => setFormData({ ...formData, ownerName: e.target.value })}
+                      required
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-1">Phone / Mobile *</label>
+                      <input
+                        type="tel"
+                        placeholder="e.g. 9876543210"
+                        value={formData.phone}
+                        onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                        required
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 mb-1">City / Market *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Ahmedabad"
+                        value={formData.city}
+                        onChange={e => setFormData({ ...formData, city: e.target.value })}
+                        required
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1">Shop Address</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Market Yard, Shop #12"
+                      value={formData.address}
+                      onChange={e => setFormData({ ...formData, address: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setModalMode('login')}
+                      className="text-xs font-bold text-slate-400 hover:text-white"
+                    >
+                      Back to Login
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black rounded-xl text-xs transition"
+                    >
+                      Register & Connect
+                    </button>
+                  </div>
+                </form>
+              )}
+
+            </div>
           </div>
         </div>
       )}
@@ -596,7 +870,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* CHAT MODAL */}
+      {/* CHAT & COMMUNITY MODAL */}
       <ChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </div>
   );
@@ -608,7 +882,6 @@ export default function App() {
       <AppShell>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/category/:id" element={<CategoryGallery />} />
           <Route path="/subcategory/:id" element={<SubCategoryGallery />} />
           <Route path="/cart" element={<Cart />} />

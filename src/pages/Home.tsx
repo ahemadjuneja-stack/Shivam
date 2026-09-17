@@ -7,7 +7,7 @@ import {
   Check,
   ShoppingBag
 } from 'lucide-react';
-import { CatalogPhoto } from '../types';
+import { CatalogPhoto, ShowroomVideo } from '../types';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { HomeVideoSlider } from '../components/HomeVideoSlider';
 
@@ -15,6 +15,7 @@ export function Home() {
   const categories = useAppStore(state => state.categories);
   const subCategories = useAppStore(state => state.subCategories);
   const photos = useAppStore(state => state.photos);
+  const showroomVideos = useAppStore(state => state.showroomVideos);
   const cart = useAppStore(state => state.cart);
   const setItemQuantity = useAppStore(state => state.setItemQuantity);
   const setIsCartOpen = useAppStore(state => state.setIsCartOpen);
@@ -36,8 +37,11 @@ export function Home() {
   const galleryPhotos = photos.filter(p => p.subCategoryId === activeSubCategoryId);
   const activePhotoIndex = selectedPhoto ? galleryPhotos.findIndex(p => p.id === selectedPhoto.id) : 0;
 
-  // Video slide reel (all photos with videos in 16:9 HDTV)
-  const videoList = photos.filter(p => !!p.videoUri);
+  // Video slide reel (combine showroomVideos collection and photos with videoUri)
+  const videoList: (CatalogPhoto | ShowroomVideo)[] = [
+    ...(showroomVideos || []),
+    ...photos.filter(p => !!p.videoUri && !showroomVideos.some(v => v.id === p.id || v.videoUri === p.videoUri))
+  ];
 
   const [isZoomedIn, setIsZoomedIn] = useState(false);
 
@@ -114,8 +118,33 @@ export function Home() {
   };
 
   // 3. Select product photo -> opens full image view
-  const handleOpenFullImage = (photo: CatalogPhoto) => {
-    setSelectedPhoto(photo);
+  const handleOpenFullImage = (item: CatalogPhoto | ShowroomVideo) => {
+    const matchedPhoto = photos.find(p => p.id === item.id || p.photoCode === item.photoCode);
+    if (matchedPhoto) {
+      setSelectedPhoto(matchedPhoto);
+      if (matchedPhoto.subCategoryId) {
+        setActiveSubCategory(matchedPhoto.subCategoryId);
+      }
+    } else {
+      const fallbackPhoto: CatalogPhoto = {
+        id: item.id,
+        categoryId: (item as any).categoryId || activeCategoryId || categories[0]?.id || '',
+        subCategoryId: (item as any).subCategoryId || activeSubCategoryId || '',
+        subCategoryName: item.subCategoryName || '',
+        photoCode: item.photoCode || 'SHOWCASE',
+        imageUri: item.imageUri || (item as any).videoUri || '',
+        videoUri: (item as any).videoUri || undefined,
+        itemCount: (item as any).itemCount || 4,
+        aAvailable: true,
+        bAvailable: true,
+        cAvailable: true,
+        dAvailable: true,
+        defaultQuantity: 6,
+        sortOrder: item.sortOrder || 0,
+        description: (item as any).description || ''
+      };
+      setSelectedPhoto(fallbackPhoto);
+    }
     setScreenMode('fullimage');
     setShowroomScreenMode('fullimage');
   };

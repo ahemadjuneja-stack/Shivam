@@ -9,11 +9,11 @@ import {
   Sparkles,
   ArrowRight
 } from 'lucide-react';
-import { CatalogPhoto } from '../types';
+import { CatalogPhoto, ShowroomVideo } from '../types';
 
 interface HomeVideoSliderProps {
-  videos: CatalogPhoto[];
-  onSelectPhoto?: (photo: CatalogPhoto) => void;
+  videos: (CatalogPhoto | ShowroomVideo)[];
+  onSelectPhoto?: (photo: CatalogPhoto | ShowroomVideo) => void;
 }
 
 export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps) {
