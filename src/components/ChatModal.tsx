@@ -12,6 +12,7 @@ export function ChatModal({ isOpen, onClose, defaultCustomerCode = '' }: { isOpe
 
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [micNotice, setMicNotice] = useState<string | null>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
   
@@ -56,7 +57,13 @@ export function ChatModal({ isOpen, onClose, defaultCustomerCode = '' }: { isOpe
   };
 
   const startRecording = async () => {
+    setMicNotice(null);
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setMicNotice("Microphone recording is not supported in this browser.");
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder.current = new MediaRecorder(stream);
       audioChunks.current = [];
@@ -86,10 +93,12 @@ export function ChatModal({ isOpen, onClose, defaultCustomerCode = '' }: { isOpe
       mediaRecorder.current.start();
       setIsRecording(true);
     } catch (err: any) {
-      if (err.name === 'NotAllowedError' || err.message?.includes('sandboxed') || err.message?.includes('Permission denied')) {
-        alert("Microphone access is blocked in this preview window. Please open the app in a new tab using the top-right button.");
+      if (err?.name === 'NotFoundError' || err?.message?.includes('Requested device not found') || err?.message?.includes('not found')) {
+        setMicNotice("No microphone found on this device. Please type your message.");
+      } else if (err?.name === 'NotAllowedError' || err?.message?.includes('sandboxed') || err?.message?.includes('Permission denied') || err?.name === 'SecurityError') {
+        setMicNotice("Microphone permission blocked. Please allow mic in browser settings.");
       } else {
-        alert("Microphone access is required to record voice notes.");
+        setMicNotice("Microphone unavailable. Please type your message.");
       }
     }
   };
@@ -146,6 +155,14 @@ export function ChatModal({ isOpen, onClose, defaultCustomerCode = '' }: { isOpe
           })}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Microphone Notice if device missing or denied */}
+        {micNotice && (
+          <div className="bg-amber-950/80 border-t border-amber-500/30 px-3 py-1.5 text-[11px] text-amber-300 flex items-center justify-between">
+            <span>{micNotice}</span>
+            <button onClick={() => setMicNotice(null)} className="text-amber-400 hover:text-white font-bold ml-2">×</button>
+          </div>
+        )}
 
         {/* Input Area */}
         <div className="p-3 bg-slate-800 border-t border-slate-700 flex items-end gap-2">

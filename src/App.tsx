@@ -27,12 +27,19 @@ function VoiceRecorder() {
   const { orderVoiceNote, setOrderVoiceNote } = useAppStore();
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [micNotice, setMicNotice] = useState<string | null>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
 
   const startRecording = async () => {
+    setMicNotice(null);
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setMicNotice("Microphone recording is not supported in this browser. Please use text notes.");
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder.current = new MediaRecorder(stream);
       audioChunks.current = [];
@@ -65,11 +72,12 @@ function VoiceRecorder() {
         });
       }, 1000);
     } catch (err: any) {
-      console.error("Microphone access denied", err);
-      if (err.name === 'NotAllowedError' || err.message?.includes('sandboxed') || err.message?.includes('Permission denied')) {
-        alert("Microphone access is blocked in this preview window. Please open the app in a new tab using the top-right button.");
+      if (err?.name === 'NotFoundError' || err?.message?.includes('Requested device not found') || err?.message?.includes('not found')) {
+        setMicNotice("No microphone found on this device. You can type instructions in the Order Note box above.");
+      } else if (err?.name === 'NotAllowedError' || err?.message?.includes('sandboxed') || err?.message?.includes('Permission denied') || err?.name === 'SecurityError') {
+        setMicNotice("Microphone access is blocked. Please allow mic permission in your browser or type in Order Note.");
       } else {
-        alert("Microphone access is required to record voice notes.");
+        setMicNotice("Microphone unavailable. Please write instructions in the Order Note box above.");
       }
     }
   };
@@ -102,23 +110,30 @@ function VoiceRecorder() {
   }
 
   return (
-    <div className="flex items-center gap-2 mt-1">
-      {isRecording ? (
-        <button
-          onClick={stopRecording}
-          className="flex-1 flex items-center justify-center gap-2 bg-red-500/20 text-red-400 border border-red-500/30 p-2 rounded-lg font-bold text-xs animate-pulse"
-        >
-          <Square size={14} fill="currentColor" />
-          <span>Stop ({Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}/2:00)</span>
-        </button>
-      ) : (
-        <button
-          onClick={startRecording}
-          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 p-2 rounded-lg text-xs font-bold transition border border-slate-700"
-        >
-          <Mic size={14} />
-          <span>Add Voice Note (Max 2m)</span>
-        </button>
+    <div className="flex flex-col gap-2 mt-1">
+      <div className="flex items-center gap-2">
+        {isRecording ? (
+          <button
+            onClick={stopRecording}
+            className="flex-1 flex items-center justify-center gap-2 bg-red-500/20 text-red-400 border border-red-500/30 p-2 rounded-lg font-bold text-xs animate-pulse"
+          >
+            <Square size={14} fill="currentColor" />
+            <span>Stop ({Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}/2:00)</span>
+          </button>
+        ) : (
+          <button
+            onClick={startRecording}
+            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 p-2 rounded-lg text-xs font-bold transition border border-slate-700"
+          >
+            <Mic size={14} />
+            <span>Add Voice Note (Max 2m)</span>
+          </button>
+        )}
+      </div>
+      {micNotice && (
+        <div className="text-[11px] text-amber-300/90 bg-amber-950/40 border border-amber-500/30 px-2.5 py-1.5 rounded-lg leading-tight">
+          {micNotice}
+        </div>
       )}
     </div>
   );
