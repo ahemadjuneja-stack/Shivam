@@ -15,11 +15,13 @@ import {
   MessageCircle, 
   FileText, 
   Store,
-  FolderOpen
+  FolderOpen,
+  SlidersHorizontal
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { WholesaleOrder, ChatMessage } from '../types';
 import { AudioMessagePlayer } from './AudioMessagePlayer';
+import { DisplayOrderManager } from './DisplayOrderManager';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../firebase';
 
@@ -28,6 +30,8 @@ export function StaffOrderManagement() {
   const orders = useAppStore(state => state.orders) as WholesaleOrder[];
   const messages = useAppStore(state => state.messages) as ChatMessage[];
   const addMessage = useAppStore(state => state.addMessage);
+
+  const [workspaceMode, setWorkspaceMode] = useState<'packing' | 'displayOrder'>('packing');
 
   // Default the staff department to currentCustomer's department or 'imitation'
   const defaultStaffDept = ((currentCustomer as any)?.department?.toLowerCase() || 'imitation') as 'imitation' | 'cosmetics' | 'hair';
@@ -48,8 +52,8 @@ export function StaffOrderManagement() {
     subCategoryName: string;
   } | null>(null);
 
-  // Quick Message state
-  const [msgText, setMsgText] = useState('');
+  // Quick Message ref
+  const msgInputRef = useRef<HTMLInputElement>(null);
   
   // Voice Recording state for Quick Message
   const [isRecording, setIsRecording] = useState(false);
@@ -177,7 +181,9 @@ export function StaffOrderManagement() {
   // Quick Chat actions
   const handleSendTextMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!msgText.trim() || !activeOrder) return;
+    const textVal = msgInputRef.current ? msgInputRef.current.value.trim() : '';
+    if (!textVal || !activeOrder) return;
+    if (msgInputRef.current) msgInputRef.current.value = '';
 
     const newMsg: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -187,7 +193,7 @@ export function StaffOrderManagement() {
       shopName: activeOrder.shopName,
       sender: 'admin',
       type: 'text',
-      text: msgText.trim(),
+      text: textVal,
       isRead: false,
       isReadByCustomer: false,
       timestamp: Date.now(),
@@ -195,7 +201,6 @@ export function StaffOrderManagement() {
     };
 
     addMessage(newMsg);
-    setMsgText('');
   };
 
   const handleImageAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -424,10 +429,34 @@ export function StaffOrderManagement() {
 
         </div>
 
+        {/* Workspace Mode Switcher */}
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60">
+          <button
+            onClick={() => setWorkspaceMode('packing')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              workspaceMode === 'packing' ? 'bg-purple-600 text-white shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
+            }`}
+          >
+            <ClipboardList size={14} /> Order Packing Workspace
+          </button>
+          <button
+            onClick={() => setWorkspaceMode('displayOrder')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              workspaceMode === 'displayOrder' ? 'bg-amber-500 text-slate-950 font-black shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
+            }`}
+          >
+            <SlidersHorizontal size={14} /> Custom Display Order Manager
+          </button>
+        </div>
+
       </div>
 
-      {/* TWO-COLUMN PACKING WORKSPACE BODY */}
-      {!activeOrder ? (
+      {/* BODY CONTENT */}
+      {workspaceMode === 'displayOrder' ? (
+        <div className="flex-1 overflow-hidden">
+          <DisplayOrderManager />
+        </div>
+      ) : !activeOrder ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-500">
           <FolderOpen size={48} className="text-slate-600 mb-3" />
           <h3 className="font-bold text-base text-slate-300">No Orders Found</h3>
@@ -674,7 +703,11 @@ export function StaffOrderManagement() {
                           {msg.type === 'voice' && (msg.mediaUrl || msg.audioUri) && (
                             <AudioMessagePlayer src={msg.mediaUrl || msg.audioUri || ''} isMe={isMe} />
                           )}
-                          {msg.text && <p className="leading-relaxed break-words">{msg.text}</p>}
+                          {msg.text && (
+                            <p dir="ltr" className="leading-relaxed break-words text-left" style={{ direction: 'ltr', textAlign: 'left' }}>
+                              <span>{msg.text}</span>
+                            </p>
+                          )}
                         </div>
                         <span className="text-[9px] text-slate-500 mt-0.5 font-medium">
                           {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -719,11 +752,16 @@ export function StaffOrderManagement() {
 
                 {/* Main message text input */}
                 <input
+                  ref={msgInputRef}
                   type="text"
                   placeholder="Type packing query or update..."
-                  value={msgText}
-                  onChange={(e) => setMsgText(e.target.value)}
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition"
+                  defaultValue=""
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  dir="ltr"
+                  style={{ direction: 'ltr', textAlign: 'left' }}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition text-left"
                 />
 
                 {/* Microphone hold/record button */}

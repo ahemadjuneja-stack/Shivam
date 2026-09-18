@@ -26,7 +26,12 @@ import {
   markCustomerMessagesAsReadInFirebase,
   syncCommunityPostToFirebase,
   likeCommunityPostInFirebase,
-  deleteCommunityPostFromFirebase
+  deleteCommunityPostFromFirebase,
+  syncCategoryToFirebase,
+  syncSubCategoryToFirebase,
+  batchUpdateCategoriesOrder,
+  batchUpdateSubCategoriesOrder,
+  batchUpdatePhotosOrder
 } from '../firebase';
 
 interface AppState {
@@ -85,9 +90,14 @@ interface AppState {
   deleteCustomer: (customerId: string) => void;
   deleteOrder: (orderId: string) => void;
   updateOrderStatus: (orderId: string, department: 'imitation' | 'cosmetics' | 'hair', status: string) => void;
+  addCategory: (category: CategoryItem) => void;
+  addSubCategory: (subCategory: SubCategory) => void;
   addPhoto: (photo: CatalogPhoto) => void;
   updatePhoto: (photoId: string, data: Partial<CatalogPhoto>) => void;
   deletePhoto: (photoId: string) => void;
+  reorderCategories: (categories: CategoryItem[]) => void;
+  reorderSubCategories: (subCategories: SubCategory[]) => void;
+  reorderPhotos: (photos: CatalogPhoto[]) => void;
   resetToDefaults: () => void;
 }
 
@@ -439,9 +449,46 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      addCategory: (category) => {
+        const current = get().categories;
+        const maxIndex = current.reduce((m, c) => Math.max(m, c.orderIndex ?? c.sortOrder ?? 0), -1);
+        const newCat = { ...category, orderIndex: maxIndex + 1, sortOrder: maxIndex + 2 };
+        syncCategoryToFirebase(newCat).catch((e) => console.error('Firebase sync error on addCategory:', e));
+        set((state) => ({ categories: [...state.categories, newCat] }));
+      },
+
+      addSubCategory: (subCategory) => {
+        const current = get().subCategories;
+        const maxIndex = current.reduce((m, s) => Math.max(m, s.orderIndex ?? s.sortOrder ?? 0), -1);
+        const newSub = { ...subCategory, orderIndex: maxIndex + 1, sortOrder: maxIndex + 2 };
+        syncSubCategoryToFirebase(newSub).catch((e) => console.error('Firebase sync error on addSubCategory:', e));
+        set((state) => ({ subCategories: [...state.subCategories, newSub] }));
+      },
+
       addPhoto: (photo) => {
-        syncPhotoToFirebase(photo).catch((e) => console.error('Firebase sync error on addPhoto:', e));
-        set((state) => ({ photos: [...state.photos, photo] }));
+        const current = get().photos;
+        const maxIndex = current.reduce((m, p) => Math.max(m, p.orderIndex ?? p.sortOrder ?? 0), -1);
+        const newPhoto = { ...photo, orderIndex: maxIndex + 1, sortOrder: maxIndex + 2 };
+        syncPhotoToFirebase(newPhoto).catch((e) => console.error('Firebase sync error on addPhoto:', e));
+        set((state) => ({ photos: [...state.photos, newPhoto] }));
+      },
+
+      reorderCategories: (categories) => {
+        const updated = categories.map((c, idx) => ({ ...c, orderIndex: idx, sortOrder: idx + 1 }));
+        set({ categories: updated });
+        batchUpdateCategoriesOrder(updated).catch((e) => console.error('Firebase batch update categories order error:', e));
+      },
+
+      reorderSubCategories: (subCategories) => {
+        const updated = subCategories.map((s, idx) => ({ ...s, orderIndex: idx, sortOrder: idx + 1 }));
+        set({ subCategories: updated });
+        batchUpdateSubCategoriesOrder(updated).catch((e) => console.error('Firebase batch update subcategories order error:', e));
+      },
+
+      reorderPhotos: (photos) => {
+        const updated = photos.map((p, idx) => ({ ...p, orderIndex: idx, sortOrder: idx + 1 }));
+        set({ photos: updated });
+        batchUpdatePhotosOrder(updated).catch((e) => console.error('Firebase batch update photos order error:', e));
       },
 
       updatePhoto: (photoId, data) => {

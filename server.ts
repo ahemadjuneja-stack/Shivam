@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import { initGeminiAutoResponder } from "./server/autoResponder";
 
 async function startServer() {
   const app = express();
@@ -14,6 +15,13 @@ async function startServer() {
   app.get("/health", (req, res) => {
     res.json({ status: "ok" });
   });
+
+  // Initialize Gemini Auto-Responder backend service
+  try {
+    initGeminiAutoResponder();
+  } catch (err) {
+    console.error('Failed to initialize Gemini Auto-Responder:', err);
+  }
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
@@ -36,3 +44,4 @@ async function startServer() {
 }
 
 startServer();
+

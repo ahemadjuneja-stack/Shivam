@@ -95,7 +95,7 @@ export function useFirebaseSync() {
       });
 
       const allPhotos = Array.from(mergedMap.values());
-      allPhotos.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      allPhotos.sort((a, b) => (a.orderIndex ?? a.sortOrder ?? 0) - (b.orderIndex ?? b.sortOrder ?? 0));
       useAppStore.setState({ photos: allPhotos });
     };
 
@@ -116,6 +116,7 @@ export function useFirebaseSync() {
         dAvailable: data.dAvailable !== undefined ? data.dAvailable : (data.d !== undefined ? data.d : true),
         defaultQuantity: typeof data.defaultQuantity === 'number' ? data.defaultQuantity : 6,
         sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0,
+        orderIndex: typeof data.orderIndex === 'number' ? data.orderIndex : (typeof data.sortOrder === 'number' ? data.sortOrder : 0),
         description: data.description || '',
         // Dynamic fields
         variants: data.variants || undefined,
@@ -143,10 +144,11 @@ export function useFirebaseSync() {
               displayName: data.displayName || data.name || data.title || doc.id,
               thumbnailUrl: data.thumbnailUrl || data.imageUri || data.imageUrl || data.image || '',
               accentColorHex: data.accentColorHex || data.accentColor || data.color || '#F59E0B',
-              sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
+              sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0,
+              orderIndex: typeof data.orderIndex === 'number' ? data.orderIndex : (typeof data.sortOrder === 'number' ? data.sortOrder : 0)
             });
           });
-          fetchedCats.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          fetchedCats.sort((a, b) => (a.orderIndex ?? a.sortOrder ?? 0) - (b.orderIndex ?? b.sortOrder ?? 0));
           useAppStore.setState({ categories: fetchedCats });
         }, (err) => {
           handleFirestoreError(err, OperationType.GET, COLLECTIONS.CATEGORIES);
@@ -165,10 +167,11 @@ export function useFirebaseSync() {
               iconName: data.iconName || data.icon || 'sparkles',
               thumbnailUrl: data.thumbnailUrl || data.imageUri || data.imageUrl || data.image || '',
               photoCount: typeof data.photoCount === 'number' ? data.photoCount : 0,
-              sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
+              sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0,
+              orderIndex: typeof data.orderIndex === 'number' ? data.orderIndex : (typeof data.sortOrder === 'number' ? data.sortOrder : 0)
             });
           });
-          fetchedSubs.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          fetchedSubs.sort((a, b) => (a.orderIndex ?? a.sortOrder ?? 0) - (b.orderIndex ?? b.sortOrder ?? 0));
           useAppStore.setState({ subCategories: fetchedSubs });
         }, (err) => {
           handleFirestoreError(err, OperationType.GET, COLLECTIONS.SUBCATEGORIES);

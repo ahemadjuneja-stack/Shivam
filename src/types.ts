@@ -10,6 +10,7 @@ export interface CategoryItem {
   thumbnailUrl: string;
   accentColorHex: string;
   sortOrder: number;
+  orderIndex?: number;
 }
 
 export interface SubCategory {
@@ -20,6 +21,7 @@ export interface SubCategory {
   thumbnailUrl: string;
   photoCount: number;
   sortOrder: number;
+  orderIndex?: number;
 }
 
 export interface CatalogPhoto {
@@ -37,6 +39,7 @@ export interface CatalogPhoto {
   dAvailable: boolean;
   defaultQuantity: number;
   sortOrder: number;
+  orderIndex?: number;
   description: string;
   // Dynamic fields from Firestore
   variants?: Array<{

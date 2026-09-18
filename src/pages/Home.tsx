@@ -142,6 +142,7 @@ export function Home() {
   // Keyboard navigation for full image
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((document.activeElement as HTMLElement)?.tagName)) return;
       if (screenMode === 'fullimage') {
         if (e.key === 'ArrowRight') handleNextPhoto();
         if (e.key === 'ArrowLeft') handlePrevPhoto();

@@ -51,7 +51,8 @@ export function ChatModal({
   const effectivePhone = currentCustomer?.phone || currentCustomer?.mobileNumber || '';
 
   // Direct Chat state
-  const [text, setText] = useState('');
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const [hasText, setHasText] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [imageCaption, setImageCaption] = useState('');
   
@@ -107,10 +108,10 @@ export function ChatModal({
   if (!isOpen) return null;
 
   // 1. Send Text Message
-  const handleSendText = () => {
-    if (!text.trim()) return;
-    const msgText = text.trim();
-    setText('');
+  const handleSend = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const text = chatInputRef.current?.value.trim();
+    if (!text) return;
     
     const newMsg: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -120,14 +121,19 @@ export function ChatModal({
       shopName: effectiveShopName,
       sender: isAdmin ? 'admin' : 'customer',
       type: 'text',
-      text: msgText,
+      text: text,
       isRead: false,
       timestamp: Date.now(),
       createdAt: Date.now()
     };
 
     addMessage(newMsg);
+    if (chatInputRef.current) {
+      chatInputRef.current.value = '';
+    }
+    setHasText(false);
   };
+  const handleSendText = handleSend;
 
   // 2. Select Image for Attachment
   const handleImagePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -505,8 +511,8 @@ export function ChatModal({
 
                       {/* Text content */}
                       {msg.text && (
-                        <p className="text-xs leading-relaxed whitespace-pre-wrap select-text">
-                          {msg.text}
+                        <p dir="ltr" className="text-xs leading-relaxed whitespace-pre-wrap select-text text-left" style={{ direction: 'ltr', textAlign: 'left' }}>
+                          <span>{msg.text}</span>
                         </p>
                       )}
 
@@ -614,7 +620,7 @@ export function ChatModal({
             )}
 
             {/* WhatsApp Chat Input Bar */}
-            <div className="p-2.5 bg-[#202c33] border-t border-slate-700/60 flex items-center gap-2 flex-shrink-0 z-10">
+            <form onSubmit={handleSendText} className="p-2.5 bg-[#202c33] border-t border-slate-700/60 flex items-center gap-2 flex-shrink-0 z-10">
               <input 
                 type="file" 
                 accept="image/*" 
@@ -625,6 +631,7 @@ export function ChatModal({
 
               {/* Photo Attachment Button */}
               <button 
+                type="button"
                 onClick={() => chatFileInputRef.current?.click()}
                 className="p-2 rounded-full text-[#8696a0] hover:text-[#e9edef] hover:bg-white/5 transition flex-shrink-0"
                 title="Attach Photo"
@@ -634,23 +641,29 @@ export function ChatModal({
               
               {/* Text Input Area */}
               <textarea
-                value={text}
-                onChange={e => setText(e.target.value)}
-                placeholder="Type a message..."
+                ref={chatInputRef}
+                defaultValue=""
                 rows={1}
-                className="flex-1 bg-[#2a3942] border-none rounded-2xl px-3.5 py-2 text-xs text-[#e9edef] placeholder-[#8696a0] resize-none max-h-24 focus:outline-none focus:ring-1 focus:ring-emerald-500 scrollbar-thin"
+                placeholder="Type a message..."
+                dir="ltr"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                className="flex-1 bg-[#2a3942] text-white text-left outline-none resize-none px-3.5 py-2 rounded-2xl text-xs placeholder-[#8696a0]"
+                style={{ direction: 'ltr', textAlign: 'left' }}
+                onInput={() => setHasText(Boolean(chatInputRef.current?.value.trim()))}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    handleSendText();
+                    handleSend();
                   }
                 }}
               />
 
               {/* Send or Voice Record Action Button */}
-              {text.trim() ? (
+              {hasText ? (
                 <button 
-                  onClick={handleSendText}
+                  type="submit"
                   className="w-10 h-10 rounded-full bg-emerald-600 text-white hover:bg-emerald-500 transition shadow flex items-center justify-center flex-shrink-0 active:scale-95"
                   title="Send Message"
                 >
@@ -658,6 +671,7 @@ export function ChatModal({
                 </button>
               ) : (
                 <button 
+                  type="button"
                   onClick={isRecording ? stopAndSendRecording : startRecording}
                   className={`w-10 h-10 rounded-full transition shadow flex items-center justify-center flex-shrink-0 active:scale-95 ${
                     isRecording 
@@ -669,7 +683,7 @@ export function ChatModal({
                   {isRecording ? <Square size={16} fill="currentColor" /> : <Mic size={18} />}
                 </button>
               )}
-            </div>
+            </form>
           </div>
         )}
 

@@ -30,12 +30,15 @@ export const firebaseApp = getApps().length === 0
 // Custom Database ID
 export const FIRESTORE_DATABASE_ID = "ai-studio-shivam-6138ca5c-1e3b-412f-957d-d52501eff503";
 
-// Initialize Firestore with specific database ID and offline persistent cache
-export const db = initializeFirestore(firebaseApp, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-}, FIRESTORE_DATABASE_ID);
+// Initialize Firestore with specific database ID and offline persistent cache (browser only)
+export const db = typeof window !== 'undefined'
+  ? initializeFirestore(firebaseApp, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
+    }, FIRESTORE_DATABASE_ID)
+  : initializeFirestore(firebaseApp, {}, FIRESTORE_DATABASE_ID);
+
 
 // Initialize Firebase Messaging safely
 export let messaging: any = null;
@@ -132,6 +135,71 @@ export async function syncPhotoToFirebase(photo: CatalogPhoto): Promise<void> {
     }, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function syncCategoryToFirebase(category: CategoryItem): Promise<void> {
+  const path = `${COLLECTIONS.CATEGORIES}/${category.id}`;
+  try {
+    const catRef = doc(db, COLLECTIONS.CATEGORIES, category.id);
+    await setDoc(catRef, {
+      ...category,
+      updatedAt: Date.now()
+    }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function syncSubCategoryToFirebase(subCategory: SubCategory): Promise<void> {
+  const path = `${COLLECTIONS.SUBCATEGORIES}/${subCategory.id}`;
+  try {
+    const subRef = doc(db, COLLECTIONS.SUBCATEGORIES, subCategory.id);
+    await setDoc(subRef, {
+      ...subCategory,
+      updatedAt: Date.now()
+    }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function batchUpdateSubCategoriesOrder(subCategories: SubCategory[]): Promise<void> {
+  try {
+    const batch = writeBatch(db);
+    subCategories.forEach((sub, index) => {
+      const subRef = doc(db, COLLECTIONS.SUBCATEGORIES, sub.id);
+      batch.set(subRef, { orderIndex: index, sortOrder: index + 1 }, { merge: true });
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, COLLECTIONS.SUBCATEGORIES);
+  }
+}
+
+export async function batchUpdatePhotosOrder(photos: CatalogPhoto[]): Promise<void> {
+  try {
+    const batch = writeBatch(db);
+    photos.forEach((photo, index) => {
+      const photoRef = doc(db, COLLECTIONS.PHOTOS, photo.id);
+      batch.set(photoRef, { orderIndex: index, sortOrder: index + 1 }, { merge: true });
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, COLLECTIONS.PHOTOS);
+  }
+}
+
+export async function batchUpdateCategoriesOrder(categories: CategoryItem[]): Promise<void> {
+  try {
+    const batch = writeBatch(db);
+    categories.forEach((cat, index) => {
+      const catRef = doc(db, COLLECTIONS.CATEGORIES, cat.id);
+      batch.set(catRef, { orderIndex: index, sortOrder: index + 1 }, { merge: true });
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, COLLECTIONS.CATEGORIES);
   }
 }
 

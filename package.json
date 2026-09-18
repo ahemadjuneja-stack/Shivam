@@ -11,6 +11,7 @@
     "preview": "node dist/server.cjs"
   },
   "dependencies": {
+    "@google/genai": "^2.23.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/express": "^5.0.6",
     "@types/react": "^19.3.0",
