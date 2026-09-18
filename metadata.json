@@ -3,7 +3,8 @@
   "description": "B2B wholesale catalog and ordering app for cosmetics, imitation jewelry, and hair accessories with 16:9 multi-product photo ordering.",
   "requestFramePermissions": [
     "microphone",
-    "camera"
+    "camera",
+    "geolocation"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

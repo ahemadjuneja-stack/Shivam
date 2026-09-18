@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store';
 import { 
   Plus, 
@@ -12,8 +13,28 @@ import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { HomeVideoSlider } from '../components/HomeVideoSlider';
 
 export function Home() {
-  const categories = useAppStore(state => state.categories);
-  const subCategories = useAppStore(state => state.subCategories);
+  const rawCategories = useAppStore(state => state.categories);
+  const rawSubCategories = useAppStore(state => state.subCategories);
+  const currentCustomer = useAppStore(state => state.currentCustomer);
+
+  const categories = rawCategories.filter(c => {
+    if (!currentCustomer) return true;
+    const allowed = currentCustomer.allowedCategoryIds;
+    if (!allowed || allowed.includes('all')) return true;
+    return allowed.includes(c.id);
+  });
+
+  const subCategories = rawSubCategories.filter(s => {
+    if (!currentCustomer) return true;
+    const allowedCat = currentCustomer.allowedCategoryIds;
+    if (allowedCat && !allowedCat.includes('all') && !allowedCat.includes(s.categoryId)) {
+      return false;
+    }
+    const allowedSub = currentCustomer.allowedSubCategoryIds;
+    if (!allowedSub || allowedSub.includes('all')) return true;
+    return allowedSub.includes(s.id);
+  });
+
   const photos = useAppStore(state => state.photos);
   const showroomVideos = useAppStore(state => state.showroomVideos);
   const cart = useAppStore(state => state.cart);
@@ -44,61 +65,7 @@ export function Home() {
   ];
 
   const [isZoomedIn, setIsZoomedIn] = useState(false);
-
-  // Touch & Swipe gesture handling for full image
-  const touchStartX = useRef<number | null>(null);
-  const touchEndX = useRef<number | null>(null);
-  const isMouseDown = useRef(false);
-  const mouseStartX = useRef<number | null>(null);
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (isZoomedIn) return;
-    touchStartX.current = e.touches[0].clientX;
-    touchEndX.current = null;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (isZoomedIn) return;
-    touchEndX.current = e.touches[0].clientX;
-  };
-
-  const handleTouchEnd = () => {
-    if (isZoomedIn) return;
-    if (touchStartX.current !== null && touchEndX.current !== null) {
-      const diffX = touchStartX.current - touchEndX.current;
-      if (diffX > 35) {
-        handleNextPhoto(); // swiped left -> next photo
-      } else if (diffX < -35) {
-        handlePrevPhoto(); // swiped right -> prev photo
-      }
-    }
-    touchStartX.current = null;
-    touchEndX.current = null;
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (isZoomedIn) return;
-    isMouseDown.current = true;
-    mouseStartX.current = e.clientX;
-  };
-
-  const handleMouseMove = () => {
-    // keeping drag state active
-  };
-
-  const handleMouseUp = (e: React.MouseEvent) => {
-    if (isZoomedIn) return;
-    if (isMouseDown.current && mouseStartX.current !== null) {
-      const diffX = mouseStartX.current - e.clientX;
-      if (diffX > 40) {
-        handleNextPhoto();
-      } else if (diffX < -40) {
-        handlePrevPhoto();
-      }
-    }
-    isMouseDown.current = false;
-    mouseStartX.current = null;
-  };
+  const [slideDirection, setSlideDirection] = useState(0);
 
   // Feedback notification
   const [qtyFeedback, setQtyFeedback] = useState<string | null>(null);
@@ -151,6 +118,7 @@ export function Home() {
 
   // Next & Prev slide in Full Image mode
   const handleNextPhoto = () => {
+    setSlideDirection(1);
     if (galleryPhotos.length === 0) return;
     if (activePhotoIndex === galleryPhotos.length - 1) {
       setEndOfCategorySuggestion(true);
@@ -161,6 +129,7 @@ export function Home() {
   };
 
   const handlePrevPhoto = () => {
+    setSlideDirection(-1);
     if (endOfCategorySuggestion) {
       setEndOfCategorySuggestion(false);
       return;
@@ -412,17 +381,11 @@ export function Home() {
       
       {/* LEFT/CENTER: 100% CLEAN MAXIMIZED PRODUCT IMAGE WITH FINGER SLIDE SWIPE */}
       <div 
-        onTouchStartCapture={handleTouchStart}
-        onTouchMoveCapture={handleTouchMove}
-        onTouchEndCapture={handleTouchEnd}
-        onMouseDownCapture={handleMouseDown}
-        onMouseMoveCapture={handleMouseMove}
-        onMouseUpCapture={handleMouseUp}
         className="flex-1 h-full rounded-xl bg-brand-navy-dark overflow-hidden relative flex items-center justify-center select-none"
         title="Double tap or pinch to zoom. Swipe to change."
       >
         {endOfCategorySuggestion ? (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900/90 text-white animate-fadeIn p-6">
+          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900/90 text-white animate-fadeIn p-6 z-10 absolute">
             <h2 className="text-xl sm:text-2xl font-bold mb-8 text-center text-brand-gold">
               You've reached the end of this folder!
             </h2>
@@ -484,29 +447,70 @@ export function Home() {
             </button>
           </div>
         ) : (
-          <TransformWrapper
-            initialScale={1}
-            minScale={1}
-            maxScale={4}
-            centerOnInit={true}
-            wheel={{ step: 0.1 }}
-            doubleClick={{ step: 0.5 }}
-            pinch={{ step: 5 }}
-            panning={{ disabled: !isZoomedIn }}
-            onTransform={(ref: any) => {
-              setIsZoomedIn(ref.state.scale > 1.05);
-            }}
-          >
-            <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <img
-                key={photo?.imageUri}
-                src={photo?.imageUri}
-                alt={photo?.photoCode}
-                draggable={false}
-                className="w-full h-full object-contain pointer-events-auto cursor-zoom-in"
-              />
-            </TransformComponent>
-          </TransformWrapper>
+          <AnimatePresence initial={false} custom={slideDirection}>
+            <motion.div
+              key={photo?.id || photo?.imageUri}
+              custom={slideDirection}
+              variants={{
+                enter: (direction: number) => ({
+                  x: direction > 0 ? 300 : -300,
+                  opacity: 0
+                }),
+                center: {
+                  zIndex: 1,
+                  x: 0,
+                  opacity: 1
+                },
+                exit: (direction: number) => ({
+                  zIndex: 0,
+                  x: direction < 0 ? 300 : -300,
+                  opacity: 0
+                })
+              }}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                x: { type: "spring", stiffness: 300, damping: 30 },
+                opacity: { duration: 0.2 }
+              }}
+              drag={isZoomedIn ? false : "x"}
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={1}
+              onDragEnd={(_, { offset }: any) => {
+                if (offset.x < -50) {
+                  handleNextPhoto();
+                } else if (offset.x > 50) {
+                  handlePrevPhoto();
+                }
+              }}
+              className="absolute w-full h-full"
+            >
+              <TransformWrapper
+                initialScale={1}
+                minScale={1}
+                maxScale={4}
+                centerOnInit={true}
+                wheel={{ step: 0.1 }}
+                doubleClick={{ step: 1 }}
+                pinch={{ step: 5 }}
+                panning={{ disabled: !isZoomedIn }}
+                onTransform={(ref: any) => {
+                  setIsZoomedIn(ref.state.scale > 1.05);
+                }}
+              >
+                <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <img
+                    key={photo?.imageUri}
+                    src={photo?.imageUri}
+                    alt={photo?.photoCode}
+                    draggable={false}
+                    className="w-full h-full object-contain pointer-events-auto cursor-zoom-in"
+                  />
+                </TransformComponent>
+              </TransformWrapper>
+            </motion.div>
+          </AnimatePresence>
         )}
 
         {/* Feedback Toast */}

@@ -189,7 +189,7 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900/60 rounded-2xl border border-slate-800 p-4 text-center">
         <Sparkles className="w-8 h-8 text-brand-gold mb-2 animate-pulse" />
-        <p className="text-sm font-bold text-slate-300">Showcase Videos Loading...</p>
+        <p className="text-sm font-bold text-slate-300">Loading catalog videos...</p>
       </div>
     );
   }
@@ -261,10 +261,6 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
       <div className="absolute top-0 inset-x-0 p-2.5 sm:p-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-center justify-between z-20 pointer-events-none">
         {/* Active Product Badge */}
         <div className="flex items-center gap-2 pointer-events-auto">
-          <span className="flex items-center gap-1.5 bg-amber-500/90 text-black font-black text-[10px] sm:text-xs px-2.5 py-1 rounded-full shadow-lg backdrop-blur-md">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-ping inline-block" />
-            LIVE SHOWCASE
-          </span>
           <span className="bg-black/60 backdrop-blur-md border border-white/20 text-white font-mono font-bold text-[11px] sm:text-xs px-2.5 py-1 rounded-full">
             {currentPhoto?.photoCode}
           </span>

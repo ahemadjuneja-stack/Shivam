@@ -16,13 +16,17 @@ import {
   Mic,
   Square,
   MessageCircle,
-  Cloud,
   Edit3,
   UserPlus,
-  Store
+  Store,
+  ClipboardList
 } from 'lucide-react';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db, COLLECTIONS, messaging } from './firebase';
+import { getToken, onMessage } from 'firebase/messaging';
 import { ChatModal } from './components/ChatModal';
+import { StaffOrderManagement } from './components/StaffOrderManagement';
 import { useFirebaseSync } from './useFirebaseSync';
 import { Customer } from './types';
 
@@ -142,9 +146,30 @@ function VoiceRecorder() {
   );
 }
 
+async function reverseGeocode(latitude: number, longitude: number) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
+      headers: {
+        'Accept-Language': 'en',
+        'User-Agent': 'ShivamApp/1.0'
+      }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const address = data.address || {};
+      const city = address.city || address.town || address.village || address.suburb || '';
+      const taluka = address.county || address.state_district || address.city_district || '';
+      return { city, taluka };
+    }
+  } catch (e) {
+    console.error('Reverse geocode error:', e);
+  }
+  return { city: '', taluka: '' };
+}
+
 function AppShell({ children }: { children: React.ReactNode }) {
   // Activate real-time multi-device cloud synchronization via Firebase Firestore
-  const { isFirebaseConnected } = useFirebaseSync();
+  useFirebaseSync();
 
   const cart = useAppStore(state => state.cart);
   const removeFromCart = useAppStore(state => state.removeFromCart);
@@ -180,8 +205,111 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   const [showLogin, setShowLogin] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isStaffOrderManagementActive, setIsStaffOrderManagementActive] = useState(false);
   const [loginId, setLoginId] = useState('');
+  const [loginPin, setLoginPin] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authViewMode, setAuthViewMode] = useState<'login' | 'register'>('login');
   const [orderSuccessMsg, setOrderSuccessMsg] = useState<string | null>(null);
+  const [fcmAlert, setFcmAlert] = useState<{ title: string; body: string } | null>(null);
+  const [networkOnline, setNetworkOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setNetworkOnline(true);
+    const handleOffline = () => setNetworkOnline(false);
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      }
+    };
+  }, []);
+
+  // Firebase Cloud Messaging Push Notification Activation & Foreground Message Handler
+  useEffect(() => {
+    if (!messaging || !currentCustomer) return;
+
+    // 1. FCM Push Token Registration (Only for Shivam Staff)
+    if (currentCustomer.role === 'Shivam Staff') {
+      const registerFCM = async () => {
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission === 'granted') {
+            const VAPID_KEY = "BLnLJ6x7M5Or12uYfBnMZrQ8bFIq0XR3CKGRyc2VDwfewVpUs8UXMBJzuO5cx7ssa-jFGEXXgGHXH2xR9d_EnE4";
+            const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+            if (token) {
+              console.log('FCM Device Token obtained:', token);
+              const customerId = currentCustomer.customerId || currentCustomer.customerCode;
+              if (customerId) {
+                const custRef = doc(db, COLLECTIONS.CUSTOMERS, customerId);
+                await updateDoc(custRef, {
+                  fcmToken: token,
+                  lastTokenUpdate: serverTimestamp()
+                });
+                console.log('FCM token stored in Firestore for customer:', customerId);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('FCM registration or database sync failed:', err);
+        }
+      };
+
+      registerFCM();
+    }
+
+    // 2. Foreground Message Listener & Beep Chime Ringtone Handler
+    const playAlertChime = () => {
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const playTone = (freq: number, start: number, duration: number) => {
+          const osc = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, start);
+          gainNode.gain.setValueAtTime(0.15, start);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, start + duration);
+          osc.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          osc.start(start);
+          osc.stop(start + duration);
+        };
+        const now = audioCtx.currentTime;
+        playTone(523.25, now, 0.2); // C5
+        playTone(659.25, now + 0.15, 0.35); // E5
+      } catch (err) {
+        console.warn('Web Audio API notification chime error:', err);
+      }
+    };
+
+    const unsubscribeOnMessage = onMessage(messaging, (payload) => {
+      console.log('FCM Foreground message received in-app:', payload);
+      
+      const staffDept = (currentCustomer.department || '').toLowerCase();
+      const msgDept = (payload.data?.department || payload.data?.category || '').toLowerCase();
+
+      // Alert if matching the staff's department/category duty or if general/broadcast
+      if (!msgDept || !staffDept || msgDept === staffDept || msgDept === 'all') {
+        playAlertChime();
+        setFcmAlert({
+          title: payload.notification?.title || payload.data?.title || '🚨 New Order Received!',
+          body: payload.notification?.body || payload.data?.body || 'New wholesale order pending verification.'
+        });
+      }
+    });
+
+    return () => {
+      if (unsubscribeOnMessage) {
+        unsubscribeOnMessage();
+      }
+    };
+  }, [currentCustomer]);
 
   // Profile Edit / Register Form states
   const [modalMode, setModalMode] = useState<'view' | 'login' | 'register' | 'edit'>('login');
@@ -192,6 +320,95 @@ function AppShell({ children }: { children: React.ReactNode }) {
     city: '',
     address: ''
   });
+
+  // Real-time tracking and presence heartbeat for verified customers
+  useEffect(() => {
+    if (!currentCustomer || currentCustomer.status === 'Pending') return;
+    
+    const custId = currentCustomer.customerId || currentCustomer.customerCode;
+    if (!custId) return;
+
+    // Set online: true, lastActive: serverTimestamp()
+    const setOnlineStatus = async (online: boolean) => {
+      try {
+        const custRef = doc(db, COLLECTIONS.CUSTOMERS, custId);
+        await updateDoc(custRef, {
+          isOnline: online,
+          lastActive: serverTimestamp()
+        });
+      } catch (err) {
+        console.error("Error setting online status:", err);
+      }
+    };
+
+    // Immediate heartbeat on mount
+    setOnlineStatus(true);
+
+    // Update lastActive every 60 seconds
+    const heartbeatInterval = setInterval(() => {
+      setOnlineStatus(true);
+    }, 60000);
+
+    // Track on visibility changes
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setOnlineStatus(true);
+      } else {
+        setOnlineStatus(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Periodic GPS tracking
+    const trackLocation = () => {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          const { city, taluka } = await reverseGeocode(latitude, longitude);
+          try {
+            const custRef = doc(db, COLLECTIONS.CUSTOMERS, custId);
+            await updateDoc(custRef, {
+              location: {
+                city,
+                taluka,
+                latitude,
+                longitude,
+                timestamp: Date.now()
+              },
+              lastActive: serverTimestamp()
+            });
+          } catch (err) {
+            console.error("Error updating location:", err);
+          }
+        },
+        (err) => {
+          console.warn("Location permission or tracking failed:", err);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    };
+
+    // Initial GPS poll
+    trackLocation();
+
+    // Refresh every 5 minutes (5 * 60 * 1000 ms)
+    const locationInterval = setInterval(trackLocation, 300000);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      clearInterval(locationInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      // Attempt to clean up and set offline
+      setOnlineStatus(false);
+    };
+  }, [currentCustomer?.customerId, currentCustomer?.status]);
+
+  useEffect(() => {
+    if (!currentCustomer || currentCustomer.role !== 'Shivam Staff') {
+      setIsStaffOrderManagementActive(false);
+    }
+  }, [currentCustomer]);
 
   const openProfileModal = () => {
     if (currentCustomer) {
@@ -212,30 +429,49 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const query = loginId.trim().toLowerCase();
+    const pin = loginPin.trim();
+
+    if (!query) {
+      setAuthError('Please enter your Customer User ID.');
+      return;
+    }
+    if (!pin) {
+      setAuthError('Please enter your Security PIN.');
+      return;
+    }
+
     const cust = customers.find(c => 
       c?.customerId?.toLowerCase() === query || 
-      c?.customerCode?.toLowerCase() === query ||
-      c?.shopName?.toLowerCase() === query
+      c?.customerCode?.toLowerCase() === query
     );
 
     if (cust) {
-      setCurrentCustomer(cust);
-      setShowLogin(false);
-      setLoginId('');
+      const expectedPin = cust.pin || '1111';
+      if (expectedPin === pin) {
+        setCurrentCustomer(cust);
+        setAuthError(null);
+        setLoginId('');
+        setLoginPin('');
+        setShowLogin(false);
+      } else {
+        setAuthError('Invalid Security PIN. Default PIN is 1111.');
+      }
     } else {
-      alert('Customer / Shop not found. You can register your shop below in 10 seconds!');
-      setModalMode('register');
+      setAuthError('Customer User ID not found. Register your shop below.');
     }
   };
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.shopName.trim() || !formData.ownerName.trim()) {
-      alert('Please enter your Shop Name and Owner Name.');
+    if (!formData.shopName.trim() || !formData.ownerName.trim() || !formData.phone.trim() || !formData.city.trim() || !formData.address.trim()) {
+      alert('Please fill out all fields: Shop Name, Owner Full Name, Mobile Number, City, and Address.');
       return;
     }
 
-    const generatedId = `CUST-${Math.floor(100 + Math.random() * 900)}`;
+    // 3 uppercase letters "SHV" + 4 random digits
+    const digits = Math.floor(1000 + Math.random() * 9000).toString();
+    const generatedId = `SHV${digits}`;
+
     const newCust: Customer = {
       customerId: generatedId,
       customerCode: generatedId,
@@ -247,13 +483,27 @@ function AppShell({ children }: { children: React.ReactNode }) {
       contactPerson: formData.ownerName.trim(),
       mobileNumber: formData.phone.trim(),
       cityName: formData.city.trim(),
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      pin: '1111',
+      status: 'Pending',
+      role: 'User',
+      allowedCategoryIds: ['all'],
+      allowedSubCategoryIds: ['all'],
+      isOnline: true,
+      lastActive: Date.now()
     };
 
     addCustomer(newCust);
     setCurrentCustomer(newCust);
+    setAuthError(null);
+    setFormData({
+      shopName: '',
+      ownerName: '',
+      phone: '',
+      city: '',
+      address: ''
+    });
     setShowLogin(false);
-    alert(`Welcome ${newCust.shopName}! Your Customer ID is ${generatedId}`);
   };
 
   const handleUpdateProfile = (e: React.FormEvent) => {
@@ -277,6 +527,206 @@ function AppShell({ children }: { children: React.ReactNode }) {
     alert('Shop Profile updated successfully!');
   };
 
+  if (!currentCustomer) {
+    return (
+      <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased overflow-y-auto flex flex-col justify-center items-center p-4 z-[999]">
+        <div className="w-full max-w-md bg-brand-navy-card border border-slate-700/80 rounded-2xl shadow-2xl p-6 sm:p-8 space-y-6 my-auto">
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-brand-gold/10 text-brand-gold border border-brand-gold/20 mb-2">
+              <Store size={32} />
+            </div>
+            <h1 className="text-2xl font-black tracking-wide text-white">SHIVAM WHOLESALE</h1>
+            <p className="text-slate-400 text-xs sm:text-sm">
+              {authViewMode === 'login' ? 'Login with your system credentials' : 'Register your wholesale shop'}
+            </p>
+          </div>
+
+          {authError && (
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-xl text-xs font-semibold leading-relaxed">
+              {authError}
+            </div>
+          )}
+
+          {authViewMode === 'login' ? (
+            <form onSubmit={handleLogin} className="space-y-4">
+              {/* Side-by-Side Credentials Row */}
+              <div className="flex flex-row gap-3">
+                <div className="flex-1 space-y-1.5 min-w-0">
+                  <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest">User ID</label>
+                  <input
+                    type="text"
+                    placeholder="User ID"
+                    value={loginId}
+                    onChange={(e) => {
+                      setLoginId(e.target.value);
+                      setAuthError(null);
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-gold transition uppercase font-mono"
+                    required
+                  />
+                </div>
+
+                <div className="flex-1 space-y-1.5 min-w-0">
+                  <label className="text-[10px] font-black text-slate-300 uppercase tracking-widest">PIN</label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    placeholder="••••"
+                    value={loginPin}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                      setLoginPin(val);
+                      setAuthError(null);
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-gold transition font-mono text-center tracking-widest"
+                    required
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-brand-gold hover:bg-brand-gold/90 text-black font-black text-sm py-3.5 rounded-xl shadow-md transition-all duration-200 active:scale-[0.98] mt-2"
+              >
+                Sign In
+              </button>
+
+              {/* New Registration converted to a clean secondary styled action button */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthViewMode('register');
+                    setAuthError(null);
+                  }}
+                  className="w-full bg-transparent border border-slate-700 hover:border-slate-600 hover:bg-slate-800/40 text-brand-gold-light font-black text-xs py-3.5 rounded-xl transition-all duration-200 uppercase tracking-wider"
+                >
+                  Register New Shop
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleRegister} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Shop Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Rajesh Cosmetics"
+                  value={formData.shopName}
+                  onChange={(e) => setFormData({ ...formData, shopName: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-gold transition"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Owner Full Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Rajesh Kumar"
+                  value={formData.ownerName}
+                  onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-gold transition"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Mobile Number</label>
+                <input
+                  type="tel"
+                  placeholder="e.g., 9876543210"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-gold transition font-mono"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">City</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Ahmedabad"
+                  value={formData.city}
+                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-gold transition"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Complete Address</label>
+                <textarea
+                  placeholder="e.g., Shop No. 12, Market Yard"
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  rows={2}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-gold transition resize-none"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-brand-gold hover:bg-brand-gold/90 text-black font-black text-sm py-3.5 rounded-xl shadow-md transition-all duration-200 active:scale-[0.98] mt-2"
+              >
+                Submit Registration
+              </button>
+
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthViewMode('login');
+                    setAuthError(null);
+                  }}
+                  className="text-xs font-bold text-brand-gold-light hover:underline"
+                >
+                  Already Registered? Login here
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (currentCustomer.status === 'Pending') {
+    return (
+      <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-brand-navy-card border border-red-500/30 rounded-2xl shadow-2xl p-6 sm:p-8 space-y-6 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 mb-2 animate-pulse">
+            <Store size={32} />
+          </div>
+          
+          <div className="space-y-2">
+            <h2 className="text-xl font-black text-white">Registration Pending Approval</h2>
+            <p className="text-red-400 font-bold text-sm bg-red-950/20 border border-red-500/25 py-2.5 px-4 rounded-xl leading-relaxed">
+              Your account is awaiting admin verification. Please contact wholesale support.
+            </p>
+          </div>
+
+          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-left space-y-1.5 text-xs text-slate-300">
+            <p className="font-bold text-white border-b border-slate-800 pb-1.5">Registration Details:</p>
+            <p><span className="text-slate-400">Shop Name:</span> {currentCustomer.shopName}</p>
+            <p><span className="text-slate-400">Owner Name:</span> {currentCustomer.ownerName}</p>
+            <p><span className="text-slate-400">City:</span> {currentCustomer.city}</p>
+          </div>
+
+          <button
+            onClick={() => setCurrentCustomer(null)}
+            className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs py-2.5 rounded-xl transition border border-slate-700"
+          >
+            Switch Shop / Logout
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased overflow-hidden select-none pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] flex items-center justify-center">
       
@@ -297,17 +747,24 @@ function AppShell({ children }: { children: React.ReactNode }) {
             {/* Right Header Utilities: Cloud Sync Status, Communicate, Customer ID, Order Slip Button */}
             <div className="flex items-center gap-1.5 sm:gap-2">
               
-              {/* Cloud Sync Pulse Dot */}
+              {/* Network Status Indicator Badge */}
               <div 
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border transition ${
-                  isFirebaseConnected 
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-bold border transition ${
+                  networkOnline 
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
-                    : 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse'
+                    : 'bg-amber-500/15 text-amber-500 border-amber-500/40 animate-pulse'
                 }`}
-                title={isFirebaseConnected ? 'Firebase Live Connected' : 'Syncing...'}
+                title={networkOnline ? 'Online - Live Database Sync Active' : 'Offline Mode (Changes saved locally)'}
               >
-                <Cloud size={11} />
-                <span className="hidden xs:inline text-[9px]">{isFirebaseConnected ? 'Live' : '...'}</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${networkOnline ? 'bg-emerald-400' : 'bg-amber-500 animate-ping'}`} />
+                <span className="font-sans font-black tracking-wider uppercase text-[9px]">
+                  {networkOnline ? 'Online' : 'Offline Mode'}
+                </span>
+                {!networkOnline && (
+                  <span className="hidden sm:inline text-[9px] font-medium text-amber-400 ml-1">
+                    (Changes saved locally)
+                  </span>
+                )}
               </div>
 
               {/* Community Hub Button with Real-Time Unread Count Badge */}
@@ -329,6 +786,22 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
                 <span className="hidden xs:inline">Community Hub</span>
               </button>
+
+              {/* Order Management Toggle Button (Shivam Staff only) */}
+              {currentCustomer?.role === 'Shivam Staff' && (
+                <button
+                  onClick={() => setIsStaffOrderManagementActive(!isStaffOrderManagementActive)}
+                  className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition font-bold shadow-sm border ${
+                    isStaffOrderManagementActive 
+                      ? 'bg-purple-600 text-white border-purple-500' 
+                      : 'bg-purple-500/10 border-purple-500/30 hover:bg-purple-600 hover:text-white text-purple-400 animate-pulse'
+                  }`}
+                  title="Order Management Packing Workspace"
+                >
+                  <ClipboardList size={14} />
+                  <span className="hidden xs:inline">Order Packing</span>
+                </button>
+              )}
 
               {/* Customer Switcher / Profile */}
               <button 
@@ -363,8 +836,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* MAIN SHOWROOM CONTENT AREA */}
         <main className="flex-1 w-full p-2 overflow-hidden flex flex-col">
-          {children}
+          {isStaffOrderManagementActive ? (
+            <StaffOrderManagement />
+          ) : (
+            children
+          )}
         </main>
+
+
 
         {/* ANDROID BOTTOM GESTURE PILL BAR */}
         <div className="h-3 bg-brand-navy-dark flex items-center justify-center flex-shrink-0 z-20">
@@ -512,8 +991,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       return;
                     }
                     placeOrder();
-                    setOrderSuccessMsg('Order dispatched successfully to admin!');
-                    setTimeout(() => setOrderSuccessMsg(null), 3000);
+                    if (!networkOnline) {
+                      setOrderSuccessMsg('Order Saved Offline ⚡ It will automatically sync as soon as you are back online.');
+                    } else {
+                      setOrderSuccessMsg('Order dispatched successfully to admin!');
+                    }
+                    setTimeout(() => setOrderSuccessMsg(null), 5000);
                   }}
                   className="flex-1 py-4 px-4 rounded-xl font-black text-base bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -677,7 +1160,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       type="submit"
                       className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black rounded-xl text-xs transition"
                     >
-                      Save to Cloud
+                      Save
                     </button>
                   </div>
                 </form>
@@ -871,6 +1354,41 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="font-black text-sm">Order Placed Successfully!</div>
             <div className="text-xs text-emerald-100">{orderSuccessMsg}</div>
           </div>
+        </div>
+      )}
+
+      {/* Interactive Foreground Push Notification Banner */}
+      {fcmAlert && (
+        <div 
+          onClick={() => {
+            setIsStaffOrderManagementActive(true);
+            setFcmAlert(null);
+          }}
+          className="fixed top-4 left-4 right-4 md:left-auto md:w-96 md:right-4 z-[150] bg-gradient-to-r from-purple-700 to-indigo-800 text-white p-4 rounded-2xl shadow-2xl border border-purple-500/30 flex items-start gap-3 cursor-pointer hover:scale-[1.02] transition duration-300 animate-slideDown"
+        >
+          <div className="bg-white/10 p-2 rounded-xl text-brand-gold flex items-center justify-center">
+            <ClipboardList size={20} />
+          </div>
+          <div className="flex-1">
+            <h4 className="font-black text-xs text-brand-gold flex items-center gap-1.5">
+              {fcmAlert.title}
+            </h4>
+            <p className="text-[11px] text-slate-100 font-bold leading-snug mt-0.5">
+              {fcmAlert.body}
+            </p>
+            <span className="text-[10px] text-purple-300 font-bold underline mt-1 block">
+              Tap to open Order Management
+            </span>
+          </div>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              setFcmAlert(null);
+            }} 
+            className="text-slate-300 hover:text-white p-1 self-start"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
 

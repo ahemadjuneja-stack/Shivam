@@ -49,18 +49,27 @@
     },
     "Customer": {
       "title": "Customer",
-      "description": "Registered wholesale B2B client",
+      "description": "Registered wholesale B2B client with tracking and access control",
       "type": "object",
       "properties": {
+        "customerId": { "type": "string" },
         "customerCode": { "type": "string" },
         "shopName": { "type": "string" },
         "cityName": { "type": "string" },
         "mobileNumber": { "type": "string" },
         "contactPerson": { "type": "string" },
         "address": { "type": "string" },
+        "pin": { "type": "string" },
+        "status": { "type": "string" },
+        "role": { "type": "string" },
+        "allowedCategoryIds": { "type": "array" },
+        "allowedSubCategoryIds": { "type": "array" },
+        "isOnline": { "type": "boolean" },
+        "lastActive": { "type": "object" },
+        "location": { "type": "object" },
         "updatedAt": { "type": "number" }
       },
-      "required": ["customerCode", "shopName"]
+      "required": ["customerId", "customerCode", "shopName"]
     },
     "ChatMessage": {
       "title": "ChatMessage",

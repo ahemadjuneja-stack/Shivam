@@ -1,13 +1,25 @@
 import { useParams, Link } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { Folder, Image as ImageIcon } from 'lucide-react';
 
 export function CategoryGallery() {
   const { id } = useParams<{ id: string }>();
-  const category = useAppStore(state => state.categories.find(c => c.id === id));
-  const subCategories = useAppStore(state => state.subCategories.filter(s => s.categoryId === id));
+  const currentCustomer = useAppStore(state => state.currentCustomer);
+  
+  const isCategoryAllowed = !currentCustomer || !currentCustomer.allowedCategoryIds || 
+    currentCustomer.allowedCategoryIds.includes('all') || 
+    currentCustomer.allowedCategoryIds.includes(id || '');
 
-  if (!category) return <div className="text-center py-20">Category not found</div>;
+  const category = useAppStore(state => state.categories.find(c => c.id === id));
+  const rawSubCategories = useAppStore(state => state.subCategories.filter(s => s.categoryId === id));
+
+  const subCategories = rawSubCategories.filter(s => {
+    if (!currentCustomer) return true;
+    const allowedSub = currentCustomer.allowedSubCategoryIds;
+    if (!allowedSub || allowedSub.includes('all')) return true;
+    return allowedSub.includes(s.id);
+  });
+
+  if (!category || !isCategoryAllowed) return <div className="text-center py-20 text-slate-400 font-bold">Category not found or access restricted</div>;
 
   return (
     <div>
@@ -21,17 +33,21 @@ export function CategoryGallery() {
           <Link
             key={sub.id}
             to={`/subcategory/${sub.id}`}
-            className="bg-brand-navy-card border border-slate-700 hover:border-brand-gold rounded-xl p-4 flex flex-col items-center justify-center gap-3 transition-colors text-center"
+            className="group flex flex-col gap-2 transition-all duration-200 hover:scale-[1.02] active:scale-95 text-center focus:outline-none"
           >
-            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
-              <Folder size={28} color={category.accentColorHex} />
+            {/* 1. Strict 16:9 Thumbnail Image */}
+            <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg">
+              <img
+                src={sub.thumbnailUrl}
+                alt={sub.name}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              />
             </div>
-            <div>
-              <h3 className="font-bold text-sm text-white line-clamp-1">{sub.name}</h3>
-              <p className="text-xs text-slate-400 flex items-center justify-center gap-1 mt-1">
-                <ImageIcon size={12} /> {sub.photoCount}
-              </p>
-            </div>
+
+            {/* 2. Below Thumbnail: Subcategory Name only */}
+            <span className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-brand-gold tracking-wide truncate px-1">
+              {sub.name}
+            </span>
           </Link>
         ))}
       </div>

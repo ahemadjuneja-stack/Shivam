@@ -300,7 +300,15 @@ export function useFirebaseSync() {
                 contactPerson: data.ownerName || data.contactPerson || '',
                 mobileNumber: data.phone || data.mobileNumber || '',
                 cityName: data.city || data.cityName || '',
-                createdAt: data.createdAt || 0
+                createdAt: data.createdAt || 0,
+                pin: data.pin || '1111',
+                status: data.status || 'Approved',
+                role: data.role || 'User',
+                allowedCategoryIds: data.allowedCategoryIds || ['all'],
+                allowedSubCategoryIds: data.allowedSubCategoryIds || ['all'],
+                isOnline: data.isOnline || false,
+                lastActive: data.lastActive || null,
+                location: data.location || null
               });
             });
             useAppStore.setState({ customers: fetchedCust });

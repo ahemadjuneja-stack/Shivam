@@ -95,11 +95,7 @@ export function Cart() {
               <span className="text-slate-400">Shop Name:</span>
               <span className="font-black text-white text-sm">{currentCustomer.shopName}</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400">Customer ID:</span>
-              <span className="font-mono font-bold text-amber-400">{currentCustomer.customerId || currentCustomer.customerCode}</span>
-            </div>
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
               <span className="text-slate-400">Owner / Contact:</span>
               <span className="font-medium text-slate-200">{currentCustomer.ownerName || currentCustomer.contactPerson}</span>
             </div>

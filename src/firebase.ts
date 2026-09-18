@@ -1,6 +1,8 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { 
-  getFirestore, 
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   doc, 
   setDoc, 
   updateDoc, 
@@ -16,6 +18,7 @@ import {
   getDocs,
   writeBatch
 } from 'firebase/firestore';
+import { getMessaging } from 'firebase/messaging';
 import firebaseConfig from '../firebase-applet-config.json';
 import { CatalogPhoto, WholesaleOrder, Customer, ChatMessage, CommunityPost } from './types';
 
@@ -27,8 +30,22 @@ export const firebaseApp = getApps().length === 0
 // Custom Database ID
 export const FIRESTORE_DATABASE_ID = "ai-studio-shivam-6138ca5c-1e3b-412f-957d-d52501eff503";
 
-// Initialize Firestore with specific database ID
-export const db = getFirestore(firebaseApp, FIRESTORE_DATABASE_ID);
+// Initialize Firestore with specific database ID and offline persistent cache
+export const db = initializeFirestore(firebaseApp, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+}, FIRESTORE_DATABASE_ID);
+
+// Initialize Firebase Messaging safely
+export let messaging: any = null;
+try {
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    messaging = getMessaging(firebaseApp);
+  }
+} catch (e) {
+  console.warn('Firebase Messaging is not supported or failed to initialize:', e);
+}
 
 // Collection Names
 export const COLLECTIONS = {
@@ -137,8 +154,16 @@ export async function syncCustomerToFirebase(customer: Customer): Promise<void> 
       contactPerson: customer.ownerName || customer.contactPerson || '',
       mobileNumber: customer.phone || customer.mobileNumber || '',
       cityName: customer.city || customer.cityName || '',
-      createdAt: customer.createdAt || Date.now(),
-      updatedAt: Date.now()
+      createdAt: customer.createdAt || serverTimestamp(),
+      updatedAt: Date.now(),
+      pin: customer.pin || '1111',
+      status: customer.status || 'Approved',
+      role: customer.role || 'User',
+      allowedCategoryIds: customer.allowedCategoryIds || ['all'],
+      allowedSubCategoryIds: customer.allowedSubCategoryIds || ['all'],
+      isOnline: customer.isOnline || false,
+      lastActive: customer.lastActive || serverTimestamp(),
+      location: customer.location || null
     }, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

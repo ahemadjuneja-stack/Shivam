@@ -132,6 +132,21 @@ export interface Customer {
   city: string;
   address?: string;
   createdAt?: number | any;
+  pin?: string;
+  status?: string;
+  role?: string;
+  department?: string;
+  allowedCategoryIds?: string[];
+  allowedSubCategoryIds?: string[];
+  isOnline?: boolean;
+  lastActive?: any;
+  location?: {
+    city?: string;
+    taluka?: string;
+    latitude: number;
+    longitude: number;
+    timestamp: number;
+  } | null;
   // Legacy aliases
   contactPerson?: string;
   mobileNumber?: string;
@@ -151,6 +166,7 @@ export interface ChatMessage {
   imageUri?: string; // backwards compatibility
   audioUri?: string; // backwards compatibility
   isRead: boolean;
+  isReadByCustomer?: boolean;
   timestamp: any;
   createdAt?: number;
 }
@@ -226,6 +242,7 @@ export interface WholesaleOrder {
   cosmeticsStatus?: string;
   hairStatus?: string;
   overallStatus?: string; // RECEIVED, PARTIALLY_PACKED, READY_TO_SHIP, DISPATCHED
+  departmentStatus?: Record<string, { status: string; updatedBy?: string; updatedAt?: number }>;
   notes?: string;
   voiceNoteUri?: string;
   orderNumber?: string;

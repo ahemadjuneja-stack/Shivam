@@ -5,13 +5,20 @@ import { getPhotoVariants } from '../types';
 
 export function SubCategoryGallery() {
   const { id } = useParams<{ id: string }>();
+  const currentCustomer = useAppStore(state => state.currentCustomer);
   const subCategory = useAppStore(state => state.subCategories.find(s => s.id === id));
   const category = useAppStore(state => state.categories.find(c => c.id === subCategory?.categoryId));
+
+  const isAllowed = !currentCustomer || (
+    (!currentCustomer.allowedCategoryIds || currentCustomer.allowedCategoryIds.includes('all') || currentCustomer.allowedCategoryIds.includes(subCategory?.categoryId || '')) &&
+    (!currentCustomer.allowedSubCategoryIds || currentCustomer.allowedSubCategoryIds.includes('all') || currentCustomer.allowedSubCategoryIds.includes(id || ''))
+  );
+
   const photos = useAppStore(state => state.photos.filter(p => p.subCategoryId === id));
   const cart = useAppStore(state => state.cart);
   const setItemQuantity = useAppStore(state => state.setItemQuantity);
 
-  if (!subCategory || !category) return <div className="text-center py-20 text-slate-400">Folder not found</div>;
+  if (!subCategory || !category || !isAllowed) return <div className="text-center py-20 text-slate-400 font-bold">Folder not found or access restricted</div>;
 
   const letterBadgeColors: Record<string, { bg: string; text: string }> = {
     A: { bg: 'bg-amber-400', text: 'text-black' },
