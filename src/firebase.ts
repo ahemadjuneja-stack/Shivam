@@ -83,8 +83,9 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage,
     authInfo: {
       userId: null,
       email: null,
@@ -92,7 +93,13 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  console.error('Firestore Error:', JSON.stringify(errInfo));
+  
+  if (errorMessage.includes('Quota limit exceeded') || errorMessage.includes('quota')) {
+    console.warn(`[Firebase Quota Exceeded] Unable to sync '${path}'. The daily free read limit has been reached. Please upgrade to the Blaze plan or wait for the daily reset.`);
+  } else {
+    console.error('Firestore Error:', JSON.stringify(errInfo));
+  }
+  
   return errInfo;
 }
 

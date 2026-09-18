@@ -259,11 +259,8 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
 
       {/* ----------------- TOP HEADER OVERLAYS ----------------- */}
       <div className="absolute top-0 inset-x-0 p-2.5 sm:p-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-center justify-between z-20 pointer-events-none">
-        {/* Active Product Badge */}
+        {/* Active Product Badge (Removed as requested) */}
         <div className="flex items-center gap-2 pointer-events-auto">
-          <span className="bg-black/60 backdrop-blur-md border border-white/20 text-white font-mono font-bold text-[11px] sm:text-xs px-2.5 py-1 rounded-full">
-            {currentPhoto?.photoCode}
-          </span>
         </div>
 
         {/* UNMUTE / MUTE BUTTON (Floating & High Contrast) */}
@@ -334,7 +331,7 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
         {/* Product Details & Actions */}
         <div className="flex items-center justify-between gap-2">
           
-          {/* Left: Play/Pause button + Title */}
+          {/* Left: Play/Pause button */}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -344,15 +341,6 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
             >
               {isPlaying ? <Pause size={13} /> : <Play size={13} className="ml-0.5" />}
             </button>
-
-            <div className="flex flex-col">
-              <span className="text-xs sm:text-sm font-black text-white truncate max-w-[180px] sm:max-w-[280px]">
-                {currentPhoto?.subCategoryName || currentPhoto?.photoCode}
-              </span>
-              <span className="text-[10px] text-slate-400">
-                Finger se slide karein ({currentIndex + 1} of {totalVideos})
-              </span>
-            </div>
           </div>
 
           {/* Right: Dot indicators and Direct Order / View Product Button */}

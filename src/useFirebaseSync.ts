@@ -96,9 +96,7 @@ export function useFirebaseSync() {
 
       const allPhotos = Array.from(mergedMap.values());
       allPhotos.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-      if (allPhotos.length > 0) {
-        useAppStore.setState({ photos: allPhotos });
-      }
+      useAppStore.setState({ photos: allPhotos });
     };
 
     function normalizePhoto(doc: any): CatalogPhoto {
@@ -109,8 +107,8 @@ export function useFirebaseSync() {
         subCategoryId: data.subCategoryId || data.subCategory || data.sub_category_id || '',
         subCategoryName: data.subCategoryName || data.subCategoryTitle || data.subCategory || '',
         photoCode: data.photoCode || data.code || data.title || doc.id,
-        imageUri: data.imageUri || data.imageUrl || data.image || data.url || data.photoUrl || '',
-        videoUri: data.videoUri || data.videoUrl || data.video || undefined,
+        imageUri: data.imageUri || data.imageUrl || data.image_url || data.image || data.url || data.photoUrl || data.photo_url || '',
+        videoUri: data.videoUri || data.videoUrl || data.video_url || data.mediaUrl || data.media_url || data.video || undefined,
         itemCount: typeof data.itemCount === 'number' ? data.itemCount : 4,
         aAvailable: data.aAvailable !== undefined ? data.aAvailable : (data.a !== undefined ? data.a : true),
         bAvailable: data.bAvailable !== undefined ? data.bAvailable : (data.b !== undefined ? data.b : true),
@@ -137,21 +135,19 @@ export function useFirebaseSync() {
         // 1. Real-time listener for Categories from 'categories'
         const catCol = collection(db, COLLECTIONS.CATEGORIES);
         unsubscribeCategories = onSnapshot(catCol, (snapshot) => {
-          if (!snapshot.empty) {
-            const fetchedCats: CategoryItem[] = [];
-            snapshot.forEach((doc) => {
-              const data = doc.data() as any;
-              fetchedCats.push({
-                id: data.id || doc.id,
-                displayName: data.displayName || data.name || data.title || doc.id,
-                thumbnailUrl: data.thumbnailUrl || data.imageUri || data.imageUrl || data.image || '',
-                accentColorHex: data.accentColorHex || data.accentColor || data.color || '#F59E0B',
-                sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
-              });
+          const fetchedCats: CategoryItem[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            fetchedCats.push({
+              id: data.id || doc.id,
+              displayName: data.displayName || data.name || data.title || doc.id,
+              thumbnailUrl: data.thumbnailUrl || data.imageUri || data.imageUrl || data.image || '',
+              accentColorHex: data.accentColorHex || data.accentColor || data.color || '#F59E0B',
+              sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
             });
-            fetchedCats.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-            useAppStore.setState({ categories: fetchedCats });
-          }
+          });
+          fetchedCats.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          useAppStore.setState({ categories: fetchedCats });
         }, (err) => {
           handleFirestoreError(err, OperationType.GET, COLLECTIONS.CATEGORIES);
         });
@@ -159,23 +155,21 @@ export function useFirebaseSync() {
         // 2. Real-time listener for SubCategories from 'subCategories'
         const subCatCol = collection(db, COLLECTIONS.SUBCATEGORIES);
         unsubscribeSubCategories = onSnapshot(subCatCol, (snapshot) => {
-          if (!snapshot.empty) {
-            const fetchedSubs: SubCategory[] = [];
-            snapshot.forEach((doc) => {
-              const data = doc.data() as any;
-              fetchedSubs.push({
-                id: data.id || doc.id,
-                categoryId: data.categoryId || data.category || '',
-                name: data.name || data.displayName || data.title || doc.id,
-                iconName: data.iconName || data.icon || 'sparkles',
-                thumbnailUrl: data.thumbnailUrl || data.imageUri || data.imageUrl || data.image || '',
-                photoCount: typeof data.photoCount === 'number' ? data.photoCount : 0,
-                sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
-              });
+          const fetchedSubs: SubCategory[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            fetchedSubs.push({
+              id: data.id || doc.id,
+              categoryId: data.categoryId || data.category || '',
+              name: data.name || data.displayName || data.title || doc.id,
+              iconName: data.iconName || data.icon || 'sparkles',
+              thumbnailUrl: data.thumbnailUrl || data.imageUri || data.imageUrl || data.image || '',
+              photoCount: typeof data.photoCount === 'number' ? data.photoCount : 0,
+              sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
             });
-            fetchedSubs.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-            useAppStore.setState({ subCategories: fetchedSubs });
-          }
+          });
+          fetchedSubs.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          useAppStore.setState({ subCategories: fetchedSubs });
         }, (err) => {
           handleFirestoreError(err, OperationType.GET, COLLECTIONS.SUBCATEGORIES);
         });
@@ -217,25 +211,23 @@ export function useFirebaseSync() {
         // 5. Real-time listener for Showroom Videos from 'showroomVideos'
         const showroomVideosCol = collection(db, COLLECTIONS.SHOWROOM_VIDEOS);
         unsubscribeShowroomVideos = onSnapshot(showroomVideosCol, (snapshot) => {
-          if (!snapshot.empty) {
-            const fetchedVideos: ShowroomVideo[] = [];
-            snapshot.forEach((doc) => {
-              const data = doc.data() as any;
-              fetchedVideos.push({
-                id: data.id || doc.id,
-                videoUri: data.videoUri || data.videoUrl || data.video || data.url || '',
-                imageUri: data.imageUri || data.imageUrl || data.image || data.thumbnailUrl || data.poster || '',
-                photoCode: data.photoCode || data.code || data.title || doc.id,
-                subCategoryName: data.subCategoryName || data.subCategoryTitle || data.subCategory || '',
-                subCategoryId: data.subCategoryId || data.subCategory || '',
-                categoryId: data.categoryId || data.category || '',
-                title: data.title || data.name || '',
-                sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
-              });
+          const fetchedVideos: ShowroomVideo[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            fetchedVideos.push({
+              id: data.id || doc.id,
+              videoUri: data.videoUri || data.videoUrl || data.video_url || data.video || data.url || data.mediaUrl || data.media_url || '',
+              imageUri: data.imageUri || data.imageUrl || data.image_url || data.image || data.thumbnailUrl || data.poster || '',
+              photoCode: data.photoCode || data.code || data.title || doc.id,
+              subCategoryName: data.subCategoryName || data.subCategoryTitle || data.subCategory || '',
+              subCategoryId: data.subCategoryId || data.subCategory || '',
+              categoryId: data.categoryId || data.category || '',
+              title: data.title || data.name || '',
+              sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
             });
-            fetchedVideos.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-            useAppStore.setState({ showroomVideos: fetchedVideos });
-          }
+          });
+          fetchedVideos.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          useAppStore.setState({ showroomVideos: fetchedVideos });
         }, (err) => {
           handleFirestoreError(err, OperationType.GET, COLLECTIONS.SHOWROOM_VIDEOS);
         });
