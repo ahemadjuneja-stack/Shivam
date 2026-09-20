@@ -3,6 +3,7 @@ import { Home } from './pages/Home';
 import { CategoryGallery } from './pages/CategoryGallery';
 import { SubCategoryGallery } from './pages/SubCategoryGallery';
 import { Cart } from './pages/Cart';
+import { Register } from './pages/Register';
 import { useAppStore } from './store';
 import { 
   ShoppingBag, 
@@ -22,8 +23,8 @@ import {
   ClipboardList
 } from 'lucide-react';
 import React, { useState, useRef, useEffect } from 'react';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db, COLLECTIONS, messaging } from './firebase';
+import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db, COLLECTIONS, messaging, deleteCustomerWithCascade } from './firebase';
 import { getToken, onMessage } from 'firebase/messaging';
 import { ChatModal } from './components/ChatModal';
 import { StaffOrderManagement } from './components/StaffOrderManagement';
@@ -181,6 +182,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const setCurrentCustomer = useAppStore(state => state.setCurrentCustomer);
   const addCustomer = useAppStore(state => state.addCustomer);
   const updateCustomer = useAppStore(state => state.updateCustomer);
+  const deleteCustomer = useAppStore(state => state.deleteCustomer);
   
   const isCartOpen = useAppStore(state => state.isCartOpen);
   const setIsCartOpen = useAppStore(state => state.setIsCartOpen);
@@ -213,6 +215,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [orderSuccessMsg, setOrderSuccessMsg] = useState<string | null>(null);
   const [fcmAlert, setFcmAlert] = useState<{ title: string; body: string } | null>(null);
   const [networkOnline, setNetworkOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
+  const [isDispatching, setIsDispatching] = useState(false);
 
   useEffect(() => {
     const handleOnline = () => setNetworkOnline(true);
@@ -312,14 +315,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, [currentCustomer]);
 
   // Profile Edit / Register Form states
-  const [modalMode, setModalMode] = useState<'view' | 'login' | 'register' | 'edit'>('login');
-  const [formData, setFormData] = useState({
+  const initialRegistrationFormData = {
     shopName: '',
     ownerName: '',
-    phone: '',
+    mobileNumber: '',
     city: '',
-    address: ''
-  });
+    address: '',
+    pin: '',
+    phone: ''
+  };
+
+  const [modalMode, setModalMode] = useState<'view' | 'login' | 'register' | 'edit'>('login');
+  const [formData, setFormData] = useState(initialRegistrationFormData);
 
   // Real-time tracking and presence heartbeat for verified customers
   useEffect(() => {
@@ -417,11 +424,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
         shopName: currentCustomer.shopName || '',
         ownerName: currentCustomer.ownerName || currentCustomer.contactPerson || '',
         phone: currentCustomer.phone || currentCustomer.mobileNumber || '',
+        mobileNumber: currentCustomer.mobileNumber || currentCustomer.phone || '',
         city: currentCustomer.city || currentCustomer.cityName || '',
-        address: currentCustomer.address || ''
+        address: currentCustomer.address || '',
+        pin: currentCustomer.pin || ''
       });
     } else {
       setModalMode('login');
+      setFormData(initialRegistrationFormData);
     }
     setShowLogin(true);
   };
@@ -461,48 +471,70 @@ function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.shopName.trim() || !formData.ownerName.trim() || !formData.phone.trim() || !formData.city.trim() || !formData.address.trim()) {
+    const phoneVal = formData.mobileNumber?.trim() || formData.phone?.trim() || '';
+    const shopName = formData.shopName.trim();
+    const ownerName = formData.ownerName.trim();
+    const city = formData.city.trim();
+    const address = formData.address.trim();
+    const pin = formData.pin?.trim() || '1111';
+
+    if (!shopName || !ownerName || !phoneVal || !city || !address) {
       alert('Please fill out all fields: Shop Name, Owner Full Name, Mobile Number, City, and Address.');
       return;
     }
 
-    // 3 uppercase letters "SHV" + 4 random digits
-    const digits = Math.floor(1000 + Math.random() * 9000).toString();
-    const generatedId = `SHV${digits}`;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      alert("Network Error: Please check your internet connection and try again.");
+      return;
+    }
 
-    const newCust: Customer = {
-      customerId: generatedId,
-      customerCode: generatedId,
-      shopName: formData.shopName.trim(),
-      ownerName: formData.ownerName.trim(),
-      phone: formData.phone.trim(),
-      city: formData.city.trim(),
-      address: formData.address.trim(),
-      contactPerson: formData.ownerName.trim(),
-      mobileNumber: formData.phone.trim(),
-      cityName: formData.city.trim(),
-      createdAt: Date.now(),
-      pin: '1111',
-      status: 'Pending',
+    const newCustomerId = `CUST-${Date.now().toString().slice(-4)}`;
+
+    const customerFirestorePayload = {
+      id: newCustomerId,
+      customerId: newCustomerId,
+      customerCode: newCustomerId,
+      shopName,
+      ownerName,
+      contactPerson: ownerName,
+      phone: phoneVal,
+      mobileNumber: phoneVal,
+      city,
+      cityName: city,
+      address,
+      pin,
+      status: 'PENDING',
+      isVerified: false,
       role: 'User',
       allowedCategoryIds: ['all'],
       allowedSubCategoryIds: ['all'],
       isOnline: true,
-      lastActive: Date.now()
+      lastActive: Date.now(),
+      createdAt: Date.now()
+    };
+
+    try {
+      const sanitizedCustomer = JSON.parse(JSON.stringify(customerFirestorePayload));
+      await setDoc(doc(db, 'customers', newCustomerId), sanitizedCustomer);
+      console.log("Registration successfully written to Firestore:", newCustomerId);
+    } catch (err: any) {
+      console.error("FIRESTORE WRITE ERROR:", err);
+      alert("Network Error: Please check your internet connection and try again.");
+      return; // Do NOT proceed to pending screen if write failed!
+    }
+
+    const newCust: Customer = {
+      ...customerFirestorePayload,
+      status: 'Pending',
+      createdAt: Date.now()
     };
 
     addCustomer(newCust);
     setCurrentCustomer(newCust);
     setAuthError(null);
-    setFormData({
-      shopName: '',
-      ownerName: '',
-      phone: '',
-      city: '',
-      address: ''
-    });
+    setFormData(initialRegistrationFormData);
     setShowLogin(false);
   };
 
@@ -510,16 +542,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
     e.preventDefault();
     if (!currentCustomer) return;
 
+    const phoneVal = formData.mobileNumber?.trim() || formData.phone?.trim() || '';
     const custId = currentCustomer.customerId || currentCustomer.customerCode;
     const updatedData: Partial<Customer> = {
       shopName: formData.shopName.trim(),
       ownerName: formData.ownerName.trim(),
-      phone: formData.phone.trim(),
+      phone: phoneVal,
       city: formData.city.trim(),
       address: formData.address.trim(),
       contactPerson: formData.ownerName.trim(),
-      mobileNumber: formData.phone.trim(),
-      cityName: formData.city.trim()
+      mobileNumber: phoneVal,
+      cityName: formData.city.trim(),
+      pin: formData.pin?.trim() || currentCustomer.pin || '1111'
     };
 
     updateCustomer(custId, updatedData);
@@ -597,6 +631,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={() => {
+                    setFormData(initialRegistrationFormData);
                     setAuthViewMode('register');
                     setAuthError(null);
                   }}
@@ -637,8 +672,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <input
                   type="tel"
                   placeholder="e.g., 9876543210"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  value={formData.mobileNumber || formData.phone || ''}
+                  onChange={(e) => setFormData({ ...formData, mobileNumber: e.target.value, phone: e.target.value })}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-gold transition font-mono"
                   required
                 />
@@ -679,6 +714,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={() => {
+                    setFormData(initialRegistrationFormData);
                     setAuthViewMode('login');
                     setAuthError(null);
                   }}
@@ -694,7 +730,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (currentCustomer.status === 'Pending') {
+  if (currentCustomer.status?.toLowerCase() === 'pending') {
     return (
       <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-brand-navy-card border border-red-500/30 rounded-2xl shadow-2xl p-6 sm:p-8 space-y-6 text-center">
@@ -984,24 +1020,34 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="p-4 border-t border-slate-800 bg-slate-900/90 flex-shrink-0">
               <div className="flex gap-2">
                 <button 
-                  disabled={cart.length === 0}
-                  onClick={() => {
+                  disabled={cart.length === 0 || isDispatching}
+                  onClick={async () => {
                     if (!currentCustomer) {
                       openProfileModal();
                       return;
                     }
-                    placeOrder();
-                    if (!networkOnline) {
-                      setOrderSuccessMsg('Order Saved Offline ⚡ It will automatically sync as soon as you are back online.');
-                    } else {
-                      setOrderSuccessMsg('Order dispatched successfully to admin!');
+                    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                      alert("Network Error: Please check your internet connection and try again.");
+                      return;
                     }
-                    setTimeout(() => setOrderSuccessMsg(null), 5000);
+                    try {
+                      setIsDispatching(true);
+                      const success = await placeOrder();
+                      setIsDispatching(false);
+                      if (success) {
+                        setIsCartOpen(false);
+                        setOrderSuccessMsg('Order dispatched and saved to database successfully!');
+                        setTimeout(() => setOrderSuccessMsg(null), 5000);
+                      }
+                    } catch (err: any) {
+                      setIsDispatching(false);
+                      alert("Network Error: Please check your internet connection and try again.");
+                    }
                   }}
-                  className="flex-1 py-4 px-4 rounded-xl font-black text-base bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 py-4 px-4 rounded-xl font-black text-base bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
                 >
-                  <Send size={18} />
-                  <span>Dispatch Order</span>
+                  <Send size={18} className={isDispatching ? 'animate-spin' : ''} />
+                  <span>{isDispatching ? 'Dispatching to Server...' : 'Dispatch Order'}</span>
                 </button>
               </div>
             </div>
@@ -1065,7 +1111,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
                   <div className="flex items-center justify-between gap-2 pt-2">
                     <button
-                      onClick={() => setModalMode('edit')}
+                      onClick={() => {
+                        setFormData({
+                          shopName: currentCustomer.shopName || '',
+                          ownerName: currentCustomer.ownerName || currentCustomer.contactPerson || '',
+                          phone: currentCustomer.phone || currentCustomer.mobileNumber || '',
+                          mobileNumber: currentCustomer.mobileNumber || currentCustomer.phone || '',
+                          city: currentCustomer.city || currentCustomer.cityName || '',
+                          address: currentCustomer.address || '',
+                          pin: currentCustomer.pin || ''
+                        });
+                        setModalMode('edit');
+                      }}
                       className="px-4 py-2 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition"
                     >
                       <Edit3 size={14} />
@@ -1076,6 +1133,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <button 
                         onClick={() => {
                           setCurrentCustomer(null);
+                          setFormData(initialRegistrationFormData);
                           setModalMode('login');
                         }}
                         className="px-4 py-2 rounded-xl font-bold text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition"
@@ -1121,8 +1179,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <label className="block text-[11px] font-bold text-slate-400 mb-1">Phone *</label>
                       <input
                         type="tel"
-                        value={formData.phone}
-                        onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                        value={formData.mobileNumber || formData.phone || ''}
+                        onChange={e => setFormData({ ...formData, mobileNumber: e.target.value, phone: e.target.value })}
                         required
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
                       />
@@ -1151,7 +1209,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   <div className="flex justify-end gap-2 pt-2">
                     <button
                       type="button"
-                      onClick={() => setModalMode('view')}
+                      onClick={() => {
+                        setFormData(initialRegistrationFormData);
+                        setModalMode('view');
+                      }}
                       className="px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white"
                     >
                       Cancel
@@ -1179,7 +1240,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <button
                         type="button"
                         onClick={() => {
-                          setFormData({ shopName: '', ownerName: '', phone: '', city: '', address: '' });
+                          setFormData(initialRegistrationFormData);
                           setModalMode('register');
                         }}
                         className="text-amber-400 hover:underline text-xs font-bold flex items-center gap-1"
@@ -1193,25 +1254,52 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       {customers.map(c => {
                         const cid = c.customerId || c.customerCode;
                         return (
-                          <button
+                          <div
                             key={cid}
-                            type="button"
-                            onClick={() => {
-                              setCurrentCustomer(c);
-                              setShowLogin(false);
-                            }}
-                            className="w-full p-2.5 rounded-xl text-left border flex items-center justify-between transition bg-slate-900/80 border-slate-800 hover:border-slate-700 text-slate-200"
+                            className="w-full p-2.5 rounded-xl border flex items-center justify-between transition bg-slate-900/80 border-slate-800 hover:border-slate-700 text-slate-200 gap-2"
                           >
-                            <div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCurrentCustomer(c);
+                                setShowLogin(false);
+                              }}
+                              className="flex-1 text-left"
+                            >
                               <div className="font-bold text-xs text-white">{c.shopName}</div>
                               <div className="text-[11px] text-slate-400">
                                 {c.ownerName || c.contactPerson} • {c.city || c.cityName}
                               </div>
+                            </button>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="font-mono text-xs font-bold text-brand-gold bg-black/40 px-2 py-0.5 rounded">
+                                {cid}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const confirmed = window.confirm(
+                                    `Are you sure you want to permanently delete customer "${c.shopName}" (${cid})?\n\nThis will permanently delete all linked orders, carts, chat messages, and audio notes.`
+                                  );
+                                  if (!confirmed) return;
+                                  try {
+                                    await deleteCustomerWithCascade(cid);
+                                    deleteCustomer(cid);
+                                    if (currentCustomer && (currentCustomer.customerId === cid || currentCustomer.customerCode === cid)) {
+                                      setCurrentCustomer(null);
+                                    }
+                                  } catch (err) {
+                                    console.error('Error deleting customer:', err);
+                                  }
+                                }}
+                                className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition"
+                                title="Permanently delete customer & cascade-delete all data"
+                              >
+                                <Trash2 size={13} />
+                              </button>
                             </div>
-                            <span className="font-mono text-xs font-bold text-brand-gold bg-black/40 px-2 py-0.5 rounded">
-                              {cid}
-                            </span>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -1293,8 +1381,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <input
                         type="tel"
                         placeholder="e.g. 9876543210"
-                        value={formData.phone}
-                        onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                        value={formData.mobileNumber || formData.phone || ''}
+                        onChange={e => setFormData({ ...formData, mobileNumber: e.target.value, phone: e.target.value })}
                         required
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white text-xs focus:outline-none focus:border-amber-400"
                       />
@@ -1326,7 +1414,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   <div className="flex justify-between items-center pt-2">
                     <button
                       type="button"
-                      onClick={() => setModalMode('login')}
+                      onClick={() => {
+                        setFormData(initialRegistrationFormData);
+                        setModalMode('login');
+                      }}
                       className="text-xs font-bold text-slate-400 hover:text-white"
                     >
                       Back to Login
@@ -1407,6 +1498,7 @@ export default function App() {
           <Route path="/category/:id" element={<CategoryGallery />} />
           <Route path="/subcategory/:id" element={<SubCategoryGallery />} />
           <Route path="/cart" element={<Cart />} />
+          <Route path="/register" element={<Register />} />
         </Routes>
       </AppShell>
     </BrowserRouter>

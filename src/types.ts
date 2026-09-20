@@ -127,6 +127,7 @@ export interface ShowroomVideo {
 }
 
 export interface Customer {
+  id?: string;
   customerId: string;
   customerCode: string; // backwards compatibility
   shopName: string;
@@ -137,6 +138,7 @@ export interface Customer {
   createdAt?: number | any;
   pin?: string;
   status?: string;
+  isVerified?: boolean;
   role?: string;
   department?: string;
   allowedCategoryIds?: string[];
@@ -167,7 +169,9 @@ export interface ChatMessage {
   text?: string;
   mediaUrl?: string; // image or audio data / URL
   imageUri?: string; // backwards compatibility
+  imageUrl?: string; // backwards compatibility
   audioUri?: string; // backwards compatibility
+  audioUrl?: string; // backwards compatibility
   isRead: boolean;
   isReadByCustomer?: boolean;
   timestamp: any;
@@ -201,6 +205,7 @@ export interface OrderCartItem {
   photoId: string;
   photoCode: string;
   imageUri: string;
+  imageUrl?: string;
   categoryId: string;
   subCategoryName: string;
   optionLetter: string;
@@ -223,6 +228,7 @@ export interface StandardOrderItem {
   // Optional extra metadata
   photoId?: string;
   imageUri?: string;
+  imageUrl?: string;
   categoryId?: string;
   subCategoryName?: string;
 }
@@ -236,10 +242,13 @@ export interface WholesaleOrder {
   cityName?: string;
   mobileNumber?: string;
   items: (OrderCartItem | StandardOrderItem)[];
+  itemCount?: number;
   totalItemsCount: number;
   totalAmount: number;
   orderNote: string;
   voiceNoteUrl?: string | null;
+  voiceUrl?: string | null;
+  audioUrl?: string | null;
   status: 'Pending' | 'Processing' | 'Dispatched' | string;
   imitationStatus?: string; // PENDING, DONE, NOT_APPLICABLE
   cosmeticsStatus?: string;
@@ -247,7 +256,7 @@ export interface WholesaleOrder {
   overallStatus?: string; // RECEIVED, PARTIALLY_PACKED, READY_TO_SHIP, DISPATCHED
   departmentStatus?: Record<string, { status: string; updatedBy?: string; updatedAt?: number }>;
   notes?: string;
-  voiceNoteUri?: string;
+  voiceNoteUri?: string | null;
   orderNumber?: string;
   createdAt: any;
 }

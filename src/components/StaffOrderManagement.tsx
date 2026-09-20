@@ -16,14 +16,21 @@ import {
   FileText, 
   Store,
   FolderOpen,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Users,
+  Database,
+  Trash2
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { WholesaleOrder, ChatMessage } from '../types';
 import { AudioMessagePlayer } from './AudioMessagePlayer';
 import { DisplayOrderManager } from './DisplayOrderManager';
+import { CustomerManager } from './CustomerManager';
+import { DatabaseCleanManager } from './DatabaseCleanManager';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db, COLLECTIONS } from '../firebase';
+import { generateMessageId } from '../lib/idGenerator';
+import { db, COLLECTIONS, scanDatabaseForOrphansAndStaleData, executeDatabaseCleanup } from '../firebase';
+import { uploadMediaToStorage } from '../services/storageService';
 
 export function StaffOrderManagement() {
   const currentCustomer = useAppStore(state => state.currentCustomer);
@@ -31,7 +38,37 @@ export function StaffOrderManagement() {
   const messages = useAppStore(state => state.messages) as ChatMessage[];
   const addMessage = useAppStore(state => state.addMessage);
 
-  const [workspaceMode, setWorkspaceMode] = useState<'packing' | 'displayOrder'>('packing');
+  const [workspaceMode, setWorkspaceMode] = useState<'packing' | 'displayOrder' | 'customers' | 'databaseCleaner'>('packing');
+  const [isQuickCleaning, setIsQuickCleaning] = useState(false);
+  const deleteOrderInStore = useAppStore(state => state.deleteOrder);
+  const deletePhotoInStore = useAppStore(state => state.deletePhoto);
+
+  const handleQuickCleanDatabase = async () => {
+    const confirmed = window.confirm(
+      `SAFE DATABASE CLEANUP\n\n` +
+      `Scan and prune orphaned orders (missing customer profile) and empty/abandoned carts (>24h old) from Firestore?\n\n` +
+      `Click OK to proceed safely.`
+    );
+    if (!confirmed) return;
+
+    setIsQuickCleaning(true);
+    try {
+      const scanResult = await scanDatabaseForOrphansAndStaleData();
+      if (scanResult.totalFound === 0) {
+        alert('Database is already clean! No orphaned orders or stale carts found.');
+        return;
+      }
+      const summary = await executeDatabaseCleanup(scanResult);
+      scanResult.orphanedOrders.forEach(o => deleteOrderInStore(o.id));
+      scanResult.invalidPhotos.forEach(p => deletePhotoInStore(p.id, p.photoCode));
+      alert(`Database Cleanup Complete!\n• Pruned ${summary.cleanedOrders} orphaned orders\n• Pruned ${summary.cleanedCarts} abandoned carts\n• Pruned ${summary.cleanedPhotos} corrupted product entries.`);
+    } catch (err: any) {
+      console.error('Quick clean failed:', err);
+      alert(`Cleanup error: ${err?.message || 'Failed to clean database.'}`);
+    } finally {
+      setIsQuickCleaning(false);
+    }
+  };
 
   // Default the staff department to currentCustomer's department or 'imitation'
   const defaultStaffDept = ((currentCustomer as any)?.department?.toLowerCase() || 'imitation') as 'imitation' | 'cosmetics' | 'hair';
@@ -52,8 +89,9 @@ export function StaffOrderManagement() {
     subCategoryName: string;
   } | null>(null);
 
-  // Quick Message ref
+  // Quick Message ref & text state
   const msgInputRef = useRef<HTMLInputElement>(null);
+  const [msgText, setMsgText] = useState('');
   
   // Voice Recording state for Quick Message
   const [isRecording, setIsRecording] = useState(false);
@@ -110,8 +148,14 @@ export function StaffOrderManagement() {
   // Safe item conversion helper
   const getSafeItems = (order: WholesaleOrder) => {
     return (order.items || []).map((item: any) => {
-      const imageUri = item.imageUri || item.imageUrl || '';
-      const photoCode = item.photoCode || item.code || '';
+      const imageUri = 
+        item.imageUri || 
+        item.imageUrl || 
+        item.image || 
+        item.photo || 
+        (Array.isArray(item.images) && item.images[0]) || 
+        '';
+      const photoCode = item.photoCode || item.code || item.name || 'SKU';
       const variant = item.variant || item.optionLetter || 'A';
       const quantity = item.quantity || 0;
       const subCategoryName = item.subCategoryName || '';
@@ -121,7 +165,16 @@ export function StaffOrderManagement() {
       if (categoryId === 'imitation_jewelry') categoryId = 'imitation';
       if (categoryId === 'hair_accessories') categoryId = 'hair';
       
-      return { imageUri, photoCode, variant, quantity, subCategoryName, categoryId };
+      return { 
+        ...item,
+        imageUri, 
+        imageUrl: imageUri,
+        photoCode, 
+        variant, 
+        quantity, 
+        subCategoryName, 
+        categoryId 
+      };
     });
   };
 
@@ -181,13 +234,15 @@ export function StaffOrderManagement() {
   // Quick Chat actions
   const handleSendTextMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const textVal = msgInputRef.current ? msgInputRef.current.value.trim() : '';
+    const textVal = (msgText || (msgInputRef.current ? msgInputRef.current.value : '')).trim();
     if (!textVal || !activeOrder) return;
+    setMsgText('');
     if (msgInputRef.current) msgInputRef.current.value = '';
 
+    const msgId = generateMessageId();
     const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      messageId: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: msgId,
+      messageId: msgId,
       customerId: activeOrder.customerId,
       customerCode: activeOrder.customerId,
       shopName: activeOrder.shopName,
@@ -203,30 +258,34 @@ export function StaffOrderManagement() {
     addMessage(newMsg);
   };
 
-  const handleImageAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && activeOrder) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result as string;
-        const newMsg: ChatMessage = {
-          id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          messageId: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          customerId: activeOrder.customerId,
-          customerCode: activeOrder.customerId,
-          shopName: activeOrder.shopName,
-          sender: 'admin',
-          type: 'image',
-          mediaUrl: base64,
-          imageUri: base64,
-          isRead: false,
-          isReadByCustomer: false,
-          timestamp: Date.now(),
-          createdAt: Date.now()
-        };
-        addMessage(newMsg);
+      const msgId = generateMessageId();
+      let cloudImageUrl = '';
+      try {
+        cloudImageUrl = await uploadMediaToStorage(file, 'communication', 'staff_img');
+      } catch (err) {
+        console.warn('Failed to upload staff image to Cloud Storage:', err);
+      }
+
+      const newMsg: ChatMessage = {
+        id: msgId,
+        messageId: msgId,
+        customerId: activeOrder.customerId,
+        customerCode: activeOrder.customerId,
+        shopName: activeOrder.shopName,
+        sender: 'admin',
+        type: 'image',
+        mediaUrl: cloudImageUrl,
+        imageUri: cloudImageUrl,
+        imageUrl: cloudImageUrl,
+        isRead: false,
+        isReadByCustomer: false,
+        timestamp: Date.now(),
+        createdAt: Date.now()
       };
-      reader.readAsDataURL(file);
+      addMessage(newMsg);
     }
     e.target.value = '';
   };
@@ -247,30 +306,35 @@ export function StaffOrderManagement() {
         if (e.data.size > 0) audioChunks.current.push(e.data);
       };
 
-      mediaRecorder.current.onstop = () => {
+      mediaRecorder.current.onstop = async () => {
         if (audioChunks.current.length === 0 || !activeOrder) return;
         const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const audioBase64 = reader.result as string;
-          const newMsg: ChatMessage = {
-            id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            messageId: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            customerId: activeOrder.customerId,
-            customerCode: activeOrder.customerId,
-            shopName: activeOrder.shopName,
-            sender: 'admin',
-            type: 'voice',
-            mediaUrl: audioBase64,
-            audioUri: audioBase64,
-            isRead: false,
-            isReadByCustomer: false,
-            timestamp: Date.now(),
-            createdAt: Date.now()
-          };
-          addMessage(newMsg);
+        const msgId = generateMessageId();
+
+        let cloudAudioUrl = '';
+        try {
+          cloudAudioUrl = await uploadMediaToStorage(audioBlob, 'voice_notes', 'staff_voice');
+        } catch (err) {
+          console.warn('Failed to upload staff voice note to Cloud Storage:', err);
+        }
+
+        const newMsg: ChatMessage = {
+          id: msgId,
+          messageId: msgId,
+          customerId: activeOrder.customerId,
+          customerCode: activeOrder.customerId,
+          shopName: activeOrder.shopName,
+          sender: 'admin',
+          type: 'voice',
+          mediaUrl: cloudAudioUrl,
+          audioUri: cloudAudioUrl,
+          audioUrl: cloudAudioUrl,
+          isRead: false,
+          isReadByCustomer: false,
+          timestamp: Date.now(),
+          createdAt: Date.now()
         };
-        reader.readAsDataURL(audioBlob);
+        addMessage(newMsg);
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -429,23 +493,52 @@ export function StaffOrderManagement() {
 
         </div>
 
-        {/* Workspace Mode Switcher */}
-        <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60">
+        {/* Workspace Mode Switcher & Quick Utilities */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setWorkspaceMode('packing')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                workspaceMode === 'packing' ? 'bg-purple-600 text-white shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              <ClipboardList size={14} /> Order Packing Workspace
+            </button>
+            <button
+              onClick={() => setWorkspaceMode('displayOrder')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                workspaceMode === 'displayOrder' ? 'bg-amber-500 text-slate-950 font-black shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              <SlidersHorizontal size={14} /> Display Order
+            </button>
+            <button
+              onClick={() => setWorkspaceMode('customers')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                workspaceMode === 'customers' ? 'bg-blue-600 text-white font-black shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users size={14} /> Customers Directory
+            </button>
+            <button
+              onClick={() => setWorkspaceMode('databaseCleaner')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                workspaceMode === 'databaseCleaner' ? 'bg-red-600 text-white font-black shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Database size={14} /> Clean Database
+            </button>
+          </div>
+
+          {/* Quick Clean Database Utility Button */}
           <button
-            onClick={() => setWorkspaceMode('packing')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-              workspaceMode === 'packing' ? 'bg-purple-600 text-white shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
-            }`}
+            onClick={handleQuickCleanDatabase}
+            disabled={isQuickCleaning}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/30 text-red-400 hover:text-red-300 border border-red-500/30 rounded-lg text-xs font-bold transition disabled:opacity-50 ml-auto"
+            title="Scan & prune orphaned orders and empty carts with confirmation"
           >
-            <ClipboardList size={14} /> Order Packing Workspace
-          </button>
-          <button
-            onClick={() => setWorkspaceMode('displayOrder')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-              workspaceMode === 'displayOrder' ? 'bg-amber-500 text-slate-950 font-black shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
-            }`}
-          >
-            <SlidersHorizontal size={14} /> Custom Display Order Manager
+            <Trash2 size={13} className={isQuickCleaning ? 'animate-spin' : ''} />
+            <span>{isQuickCleaning ? 'Cleaning...' : 'Quick Clean DB'}</span>
           </button>
         </div>
 
@@ -455,6 +548,14 @@ export function StaffOrderManagement() {
       {workspaceMode === 'displayOrder' ? (
         <div className="flex-1 overflow-hidden">
           <DisplayOrderManager />
+        </div>
+      ) : workspaceMode === 'customers' ? (
+        <div className="flex-1 overflow-hidden">
+          <CustomerManager />
+        </div>
+      ) : workspaceMode === 'databaseCleaner' ? (
+        <div className="flex-1 overflow-hidden">
+          <DatabaseCleanManager />
         </div>
       ) : !activeOrder ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-500">
@@ -696,6 +797,7 @@ export function StaffOrderManagement() {
                             <img 
                               src={msg.mediaUrl || msg.imageUri} 
                               alt="attached" 
+                              loading="lazy"
                               referrerPolicy="no-referrer"
                               className="max-w-full rounded mb-1 max-h-40 object-cover" 
                             />
@@ -755,7 +857,8 @@ export function StaffOrderManagement() {
                   ref={msgInputRef}
                   type="text"
                   placeholder="Type packing query or update..."
-                  defaultValue=""
+                  value={msgText}
+                  onChange={(e) => setMsgText(e.target.value)}
                   autoComplete="off"
                   autoCorrect="off"
                   spellCheck="false"

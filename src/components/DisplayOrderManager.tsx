@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
-import { ArrowUp, ArrowDown, Layers, Grid, Sparkles, Check, Save } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowUp, ArrowDown, Sparkles, Check } from 'lucide-react';
 import { useAppStore } from '../store';
-import { CategoryItem, SubCategory, CatalogPhoto } from '../types';
 
 export function DisplayOrderManager() {
   const categories = useAppStore(state => state.categories);

@@ -1,8 +1,7 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { 
   initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
+  memoryLocalCache,
   doc, 
   setDoc, 
   updateDoc, 
@@ -19,25 +18,116 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { getMessaging } from 'firebase/messaging';
+import { getStorage, ref as storageRef, listAll, deleteObject, uploadBytes, getDownloadURL } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
-import { CatalogPhoto, WholesaleOrder, Customer, ChatMessage, CommunityPost } from './types';
+import { CatalogPhoto, WholesaleOrder, Customer, ChatMessage, CommunityPost, CategoryItem, SubCategory } from './types';
+import { generateOrderId } from './lib/idGenerator';
 
 // Initialize Firebase App
 export const firebaseApp = getApps().length === 0 
   ? initializeApp(firebaseConfig) 
   : getApps()[0];
 
+// Storage bucket instance
+export const storage = typeof window !== 'undefined' 
+  ? getStorage(firebaseApp, "gs://shivam-2bace.firebasestorage.app") 
+  : null;
+
+export type MediaFolder = 'catalog' | 'voice_notes' | 'communication' | 'cart_attachments' | 'staff_uploads';
+
+/**
+ * Direct Cloud Storage upload pipeline
+ */
+export async function uploadMediaToStorage(
+  fileOrBlob: Blob | File | string,
+  folder: MediaFolder,
+  prefix: string = 'media'
+): Promise<string> {
+  if (!fileOrBlob) return '';
+
+  if (typeof fileOrBlob === 'string' && (fileOrBlob.startsWith('http://') || fileOrBlob.startsWith('https://'))) {
+    return fileOrBlob;
+  }
+
+  let uploadableBlob: Blob | File | null = null;
+
+  if (typeof fileOrBlob === 'string') {
+    if (fileOrBlob.startsWith('data:') || fileOrBlob.startsWith('blob:')) {
+      try {
+        const res = await fetch(fileOrBlob);
+        uploadableBlob = await res.blob();
+      } catch (err) {
+        console.warn('[Storage] Failed to convert URI to blob:', err);
+        return '';
+      }
+    } else {
+      return '';
+    }
+  } else {
+    uploadableBlob = fileOrBlob;
+  }
+
+  if (!uploadableBlob || !storage) return '';
+
+  const mime = (uploadableBlob as Blob).type || '';
+  let ext = 'jpg';
+  if (mime.includes('audio') || mime.includes('webm')) ext = 'webm';
+  else if (mime.includes('mp4') || mime.includes('m4a')) ext = 'm4a';
+  else if (mime.includes('wav')) ext = 'wav';
+  else if (mime.includes('png')) ext = 'png';
+  else if (mime.includes('webp')) ext = 'webp';
+  else if (mime.includes('gif')) ext = 'gif';
+  else if (mime.includes('pdf')) ext = 'pdf';
+
+  const uniqueName = `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
+  const fileRef = storageRef(storage, `${folder}/${uniqueName}`);
+
+  const uploadTask = async () => {
+    const snapshot = await uploadBytes(fileRef, uploadableBlob as Blob, { 
+      contentType: (uploadableBlob as Blob).type || undefined 
+    });
+    return await getDownloadURL(snapshot.ref);
+  };
+
+  const timeoutPromise = new Promise<string>((_, reject) => {
+    setTimeout(() => reject(new Error('Cloud Storage upload timed out after 5s')), 5000);
+  });
+
+  try {
+    const downloadUrl = await Promise.race([uploadTask(), timeoutPromise]);
+    return downloadUrl;
+  } catch (uploadErr) {
+    console.warn('[Storage] Upload failed or timed out:', uploadErr);
+    return '';
+  }
+}
+
 // Custom Database ID
 export const FIRESTORE_DATABASE_ID = "ai-studio-shivam-6138ca5c-1e3b-412f-957d-d52501eff503";
 
-// Initialize Firestore with specific database ID and offline persistent cache (browser only)
-export const db = typeof window !== 'undefined'
-  ? initializeFirestore(firebaseApp, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager()
-      })
-    }, FIRESTORE_DATABASE_ID)
-  : initializeFirestore(firebaseApp, {}, FIRESTORE_DATABASE_ID);
+// Initialize Firestore with specific database ID, memory-only cache (NO persistent IndexedDB), and long-polling transport
+export const db = initializeFirestore(firebaseApp, {
+  localCache: memoryLocalCache(), // Pure memory only, NO persistent offline IndexedDB
+  experimentalForceLongPolling: true
+}, FIRESTORE_DATABASE_ID);
+
+// Clean up any stale IndexedDB offline queues from previous persistent sessions
+if (typeof window !== 'undefined' && 'indexedDB' in window) {
+  try {
+    if (typeof indexedDB.databases === 'function') {
+      indexedDB.databases().then((dbs) => {
+        dbs.forEach((dbInfo) => {
+          if (dbInfo.name && (dbInfo.name.includes('firestore') || dbInfo.name.includes('firebase'))) {
+            try {
+              indexedDB.deleteDatabase(dbInfo.name);
+              console.log('[Firestore] Purged legacy offline IndexedDB:', dbInfo.name);
+            } catch (_) {}
+          }
+        });
+      }).catch(() => {});
+    }
+  } catch (_) {}
+}
 
 
 // Initialize Firebase Messaging safely
@@ -99,6 +189,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   
   if (errorMessage.includes('Quota limit exceeded') || errorMessage.includes('quota')) {
     console.warn(`[Firebase Quota Exceeded] Unable to sync '${path}'. The daily free read limit has been reached. Please upgrade to the Blaze plan or wait for the daily reset.`);
+  } else if (errorMessage.includes('RST_STREAM') || errorMessage.includes('Code: 13') || errorMessage.includes('INTERNAL: Received RST_STREAM')) {
+    console.warn(`[Firestore Stream Notice] Temporary stream reset for '${path}'. Auto-reconnecting...`);
   } else {
     console.error('Firestore Error:', JSON.stringify(errInfo));
   }
@@ -125,14 +217,63 @@ export async function testFirestoreConnection(): Promise<boolean> {
    FIRESTORE CRUD HELPERS
    ========================================================================== */
 
+export async function safelyDeleteStorageFolder(folderPath: string): Promise<void> {
+  if (!storage) return;
+  try {
+    const folder = storageRef(storage, folderPath);
+    const listResult = await listAll(folder);
+    await Promise.all(listResult.items.map(item => deleteObject(item).catch(() => {})));
+    await Promise.all(listResult.prefixes.map(prefix => safelyDeleteStorageFolder(prefix.fullPath)));
+  } catch {
+    // Safe fallback if folder not found
+  }
+}
+
 export async function syncPhotoToFirebase(photo: CatalogPhoto): Promise<void> {
   const path = `${COLLECTIONS.PHOTOS}/${photo.id}`;
   try {
-    const photoRef = doc(db, COLLECTIONS.PHOTOS, photo.id);
-    await setDoc(photoRef, {
+    // Ensure no stale conflicting document with the same SKU (photoCode) lingers
+    if (photo.photoCode) {
+      try {
+        const cleanSku = photo.photoCode.trim();
+        const qPhotos = query(collection(db, COLLECTIONS.PHOTOS), where('photoCode', '==', cleanSku));
+        const qCatalogPhotos = query(collection(db, COLLECTIONS.CATALOG_PHOTOS), where('photoCode', '==', cleanSku));
+        const [snap1, snap2] = await Promise.allSettled([getDocs(qPhotos), getDocs(qCatalogPhotos)]);
+        
+        const staleDocs: any[] = [];
+        if (snap1.status === 'fulfilled') {
+          snap1.value.forEach(d => {
+            if (d.id !== photo.id) staleDocs.push(d.ref);
+          });
+        }
+        if (snap2.status === 'fulfilled') {
+          snap2.value.forEach(d => {
+            if (d.id !== photo.id) staleDocs.push(d.ref);
+          });
+        }
+        if (staleDocs.length > 0) {
+          const batch = writeBatch(db);
+          staleDocs.forEach(r => batch.delete(r));
+          await batch.commit();
+        }
+      } catch (err) {
+        console.warn('SKU conflict pre-check error (non-fatal):', err);
+      }
+    }
+
+    const photoPayload = {
       ...photo,
       updatedAt: Date.now()
-    }, { merge: true });
+    };
+
+    const photoRef = doc(db, COLLECTIONS.PHOTOS, photo.id);
+    await setDoc(photoRef, photoPayload, { merge: true });
+
+    // Also mirror to CATALOG_PHOTOS
+    try {
+      const catPhotoRef = doc(db, COLLECTIONS.CATALOG_PHOTOS, photo.id);
+      await setDoc(catPhotoRef, photoPayload, { merge: true });
+    } catch {}
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -203,22 +344,45 @@ export async function batchUpdateCategoriesOrder(categories: CategoryItem[]): Pr
   }
 }
 
-export async function deletePhotoFromFirebase(photoId: string): Promise<void> {
+export async function deletePhotoFromFirebase(photoId: string, photoCode?: string): Promise<void> {
   const path = `${COLLECTIONS.PHOTOS}/${photoId}`;
   try {
-    const photoRef = doc(db, COLLECTIONS.PHOTOS, photoId);
-    await deleteDoc(photoRef);
+    const docsToDelete: any[] = [];
+    docsToDelete.push(doc(db, COLLECTIONS.PHOTOS, photoId));
+    docsToDelete.push(doc(db, COLLECTIONS.CATALOG_PHOTOS, photoId));
+
+    if (photoCode && photoCode.trim()) {
+      const cleanSku = photoCode.trim();
+      const q1 = query(collection(db, COLLECTIONS.PHOTOS), where('photoCode', '==', cleanSku));
+      const q2 = query(collection(db, COLLECTIONS.CATALOG_PHOTOS), where('photoCode', '==', cleanSku));
+      const [s1, s2] = await Promise.allSettled([getDocs(q1), getDocs(q2)]);
+      if (s1.status === 'fulfilled') s1.value.forEach(d => docsToDelete.push(d.ref));
+      if (s2.status === 'fulfilled') s2.value.forEach(d => docsToDelete.push(d.ref));
+    }
+
+    const uniqueMap = new Map<string, any>();
+    docsToDelete.forEach(r => uniqueMap.set(r.path, r));
+
+    const batch = writeBatch(db);
+    uniqueMap.forEach(r => batch.delete(r));
+    await batch.commit();
+
+    if (photoCode) {
+      safelyDeleteStorageFolder(`products/${photoCode}`).catch(() => {});
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
 export async function syncCustomerToFirebase(customer: Customer): Promise<void> {
-  const customerId = customer.customerId || customer.customerCode;
+  const customerId = customer.customerId || customer.customerCode || (customer as any).id || `CUST-${Date.now().toString().slice(-4)}`;
   const path = `${COLLECTIONS.CUSTOMERS}/${customerId}`;
   try {
     const custRef = doc(db, COLLECTIONS.CUSTOMERS, customerId);
     await setDoc(custRef, {
+      ...customer,
+      id: customerId,
       customerId,
       customerCode: customerId,
       shopName: customer.shopName || '',
@@ -229,77 +393,253 @@ export async function syncCustomerToFirebase(customer: Customer): Promise<void> 
       contactPerson: customer.ownerName || customer.contactPerson || '',
       mobileNumber: customer.phone || customer.mobileNumber || '',
       cityName: customer.city || customer.cityName || '',
-      createdAt: customer.createdAt || serverTimestamp(),
+      createdAt: typeof customer.createdAt === 'number' ? customer.createdAt : Date.now(),
       updatedAt: Date.now(),
       pin: customer.pin || '1111',
-      status: customer.status || 'Approved',
+      status: customer.status || 'PENDING',
+      isVerified: (customer as any).isVerified !== undefined ? (customer as any).isVerified : false,
       role: customer.role || 'User',
       allowedCategoryIds: customer.allowedCategoryIds || ['all'],
       allowedSubCategoryIds: customer.allowedSubCategoryIds || ['all'],
-      isOnline: customer.isOnline || false,
-      lastActive: customer.lastActive || serverTimestamp(),
+      isOnline: customer.isOnline !== undefined ? customer.isOnline : true,
+      lastActive: Date.now(),
       location: customer.location || null
     }, { merge: true });
+    console.log('Successfully synced customer to Firestore:', customerId);
   } catch (error) {
+    console.error("Firestore Register Error:", error);
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
-export async function deleteCustomerFromFirebase(customerCodeOrId: string): Promise<void> {
-  const path = `${COLLECTIONS.CUSTOMERS}/${customerCodeOrId}`;
+export async function deleteCustomerWithCascade(customerCodeOrId: string): Promise<{
+  deletedOrdersCount: number;
+  deletedMessagesCount: number;
+  deletedCartsCount: number;
+}> {
+  const targetKey = customerCodeOrId?.trim();
+  if (!targetKey) {
+    return { deletedOrdersCount: 0, deletedMessagesCount: 0, deletedCartsCount: 0 };
+  }
+
+  const path = `${COLLECTIONS.CUSTOMERS}/${targetKey}`;
+  const refsToDelete: any[] = [];
+  let deletedOrdersCount = 0;
+  let deletedMessagesCount = 0;
+  let deletedCartsCount = 0;
+
   try {
-    const custRef = doc(db, COLLECTIONS.CUSTOMERS, customerCodeOrId);
-    await deleteDoc(custRef);
+    // 1. Primary customer document & search for alternate IDs
+    const searchKeys = new Set<string>([targetKey]);
+    refsToDelete.push(doc(db, COLLECTIONS.CUSTOMERS, targetKey));
+
+    try {
+      const qCust1 = query(collection(db, COLLECTIONS.CUSTOMERS), where('customerId', '==', targetKey));
+      const qCust2 = query(collection(db, COLLECTIONS.CUSTOMERS), where('customerCode', '==', targetKey));
+      const [snap1, snap2] = await Promise.allSettled([getDocs(qCust1), getDocs(qCust2)]);
+      
+      if (snap1.status === 'fulfilled') {
+        snap1.value.forEach(d => {
+          refsToDelete.push(d.ref);
+          const data = d.data();
+          if (data.customerId) searchKeys.add(data.customerId);
+          if (data.customerCode) searchKeys.add(data.customerCode);
+        });
+      }
+      if (snap2.status === 'fulfilled') {
+        snap2.value.forEach(d => {
+          refsToDelete.push(d.ref);
+          const data = d.data();
+          if (data.customerId) searchKeys.add(data.customerId);
+          if (data.customerCode) searchKeys.add(data.customerCode);
+        });
+      }
+    } catch (e) {
+      console.warn('Customer query error:', e);
+    }
+
+    const keyList = Array.from(searchKeys);
+
+    // 2. Cascade delete Orders
+    for (const key of keyList) {
+      const qO1 = query(collection(db, COLLECTIONS.ORDERS), where('customerId', '==', key));
+      const qO2 = query(collection(db, COLLECTIONS.ORDERS), where('customerCode', '==', key));
+      const [snapO1, snapO2] = await Promise.allSettled([getDocs(qO1), getDocs(qO2)]);
+
+      if (snapO1.status === 'fulfilled') {
+        snapO1.value.forEach(d => {
+          refsToDelete.push(d.ref);
+          deletedOrdersCount++;
+        });
+      }
+      if (snapO2.status === 'fulfilled') {
+        snapO2.value.forEach(d => {
+          refsToDelete.push(d.ref);
+          deletedOrdersCount++;
+        });
+      }
+    }
+
+    // 3. Cascade delete Carts
+    for (const key of keyList) {
+      refsToDelete.push(doc(db, 'carts', key));
+      refsToDelete.push(doc(db, 'cart', key));
+
+      try {
+        const qC1 = query(collection(db, 'carts'), where('customerId', '==', key));
+        const qC2 = query(collection(db, 'cart'), where('customerId', '==', key));
+        const [snapC1, snapC2] = await Promise.allSettled([getDocs(qC1), getDocs(qC2)]);
+        if (snapC1.status === 'fulfilled') snapC1.value.forEach(d => { refsToDelete.push(d.ref); deletedCartsCount++; });
+        if (snapC2.status === 'fulfilled') snapC2.value.forEach(d => { refsToDelete.push(d.ref); deletedCartsCount++; });
+      } catch {}
+    }
+
+    // 4. Cascade delete Chat Messages & Conversations
+    for (const key of keyList) {
+      const qM1 = query(collection(db, COLLECTIONS.MESSAGES), where('customerId', '==', key));
+      const qM2 = query(collection(db, COLLECTIONS.MESSAGES), where('customerCode', '==', key));
+      const [snapM1, snapM2] = await Promise.allSettled([getDocs(qM1), getDocs(qM2)]);
+      
+      if (snapM1.status === 'fulfilled') {
+        snapM1.value.forEach(d => { refsToDelete.push(d.ref); deletedMessagesCount++; });
+      }
+      if (snapM2.status === 'fulfilled') {
+        snapM2.value.forEach(d => { refsToDelete.push(d.ref); deletedMessagesCount++; });
+      }
+
+      // Legacy 'messages'
+      try {
+        const qAlt = query(collection(db, 'messages'), where('customerId', '==', key));
+        const snapAlt = await getDocs(qAlt);
+        snapAlt.forEach(d => { refsToDelete.push(d.ref); deletedMessagesCount++; });
+      } catch {}
+
+      // Subcollection 'conversations/{key}/messages'
+      try {
+        const subCol = collection(db, COLLECTIONS.CONVERSATIONS, key, 'messages');
+        const snapSub = await getDocs(subCol);
+        snapSub.forEach(d => { refsToDelete.push(d.ref); deletedMessagesCount++; });
+        refsToDelete.push(doc(db, COLLECTIONS.CONVERSATIONS, key));
+      } catch {}
+
+      // Community posts
+      try {
+        const qPost = query(collection(db, COLLECTIONS.COMMUNITY_POSTS), where('customerId', '==', key));
+        const snapPost = await getDocs(qPost);
+        snapPost.forEach(d => refsToDelete.push(d.ref));
+      } catch {}
+    }
+
+    // Deduplicate refs
+    const uniqueRefs = new Map<string, any>();
+    refsToDelete.forEach(ref => {
+      if (ref && ref.path) {
+        uniqueRefs.set(ref.path, ref);
+      }
+    });
+
+    // Execute in batches of 400
+    const refsList = Array.from(uniqueRefs.values());
+    const chunkSize = 400;
+    for (let i = 0; i < refsList.length; i += chunkSize) {
+      const batch = writeBatch(db);
+      const chunk = refsList.slice(i, i + chunkSize);
+      chunk.forEach(ref => batch.delete(ref));
+      await batch.commit();
+    }
+
+    // 5. Delete Storage Audio / Voice Notes
+    for (const key of keyList) {
+      await Promise.allSettled([
+        safelyDeleteStorageFolder(`voiceNotes/${key}`),
+        safelyDeleteStorageFolder(`orders/${key}`),
+        safelyDeleteStorageFolder(`customers/${key}`)
+      ]);
+    }
+
+    return { deletedOrdersCount, deletedMessagesCount, deletedCartsCount };
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
+    throw error;
   }
 }
 
+export async function deleteCustomerFromFirebase(customerCodeOrId: string): Promise<void> {
+  await deleteCustomerWithCascade(customerCodeOrId);
+}
+
 export async function syncOrderToFirebase(order: WholesaleOrder): Promise<void> {
-  const orderId = order.orderId || order.id;
+  const orderId = order.orderId || order.id || (order as any).orderNumber || generateOrderId();
   const path = `${COLLECTIONS.ORDERS}/${orderId}`;
+  
+  if (!order.items || order.items.length === 0) {
+    console.warn("syncOrderToFirebase aborted: items array is empty");
+    return;
+  }
+
   try {
     const orderRef = doc(db, COLLECTIONS.ORDERS, orderId);
     
     // Standardized fields requested by Admin Dashboard
-    const sanitizedItems = order.items.map((item: any) => ({
-      id: item.id || `${item.photoId || item.photoCode}_${item.variant || item.optionLetter || 'A'}`,
-      photoCode: item.photoCode || '',
-      name: item.name || `${item.photoCode} (Option ${item.variant || item.optionLetter || 'A'})`,
-      quantity: Number(item.quantity) || 1,
-      variant: item.variant || item.optionLetter || 'A',
-      price: Number(item.price) || 0,
-      photoId: item.photoId || '',
-      imageUri: item.imageUri || '',
-      categoryId: item.categoryId || '',
-      subCategoryName: item.subCategoryName || '',
-      optionLetter: item.optionLetter || item.variant || 'A'
-    }));
+    const sanitizedItems = order.items.map((item: any) => {
+      const resolvedImage = 
+        item.imageUri || 
+        item.imageUrl || 
+        item.image || 
+        item.photo || 
+        (Array.isArray(item.images) && item.images[0]) || 
+        '';
 
-    await setDoc(orderRef, {
+      return {
+        photoCode: item.photoCode || item.code || item.name || 'SKU',
+        imageUri: resolvedImage,
+        imageUrl: resolvedImage, // Dual-key compatibility
+        quantity: Number(item.quantity || 1),
+        category: item.category || item.categoryId || '',
+        categoryId: item.categoryId || item.category || '',
+        subCategoryName: item.subCategoryName || '',
+        variant: item.variant || item.optionLetter || 'A',
+        optionLetter: item.optionLetter || item.variant || 'A',
+        price: Number(item.price) || 0,
+        photoId: item.photoId || '',
+        id: item.id || `${item.photoId || item.photoCode}_${item.variant || item.optionLetter || 'A'}`,
+        name: item.name || `${item.photoCode || 'SKU'} (Option ${item.variant || item.optionLetter || 'A'})`
+      };
+    });
+
+    const totalQty = Number(order.totalItemsCount) || sanitizedItems.reduce((acc, i) => acc + i.quantity, 0);
+
+    const orderPayload = {
       orderId,
       id: orderId,
+      orderNumber: orderId,
       customerId: order.customerId || order.customerCode || '',
       customerCode: order.customerCode || order.customerId || '',
       shopName: order.shopName || '',
+      cityName: order.cityName || '',
+      mobileNumber: order.mobileNumber || '',
       items: sanitizedItems,
+      itemCount: sanitizedItems.length,
+      totalItemsCount: totalQty,
       orderNote: order.orderNote || order.notes || '',
       notes: order.notes || order.orderNote || '',
       voiceNoteUrl: order.voiceNoteUrl || order.voiceNoteUri || null,
       voiceNoteUri: order.voiceNoteUri || order.voiceNoteUrl || null,
       totalAmount: Number(order.totalAmount) || 0,
-      totalItemsCount: Number(order.totalItemsCount) || sanitizedItems.reduce((acc, i) => acc + i.quantity, 0),
       status: order.status || 'Pending',
       overallStatus: order.overallStatus || order.status || 'Pending',
       imitationStatus: order.imitationStatus || 'PENDING',
       cosmeticsStatus: order.cosmeticsStatus || 'PENDING',
       hairStatus: order.hairStatus || 'PENDING',
-      cityName: order.cityName || '',
-      mobileNumber: order.mobileNumber || '',
-      createdAt: serverTimestamp(),
+      createdAt: typeof order.createdAt === 'number' ? order.createdAt : Date.now(),
       updatedAt: Date.now()
-    }, { merge: true });
+    };
+
+    const sanitizedPayload = JSON.parse(JSON.stringify(orderPayload));
+    await setDoc(orderRef, sanitizedPayload, { merge: true });
+    console.log('Order successfully synced to Firestore:', orderId);
   } catch (error) {
+    console.error("Firestore Place Order Error:", error);
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
@@ -333,14 +673,24 @@ export async function deleteOrderFromFirebase(orderId: string): Promise<void> {
 export async function syncCommunityPostToFirebase(post: CommunityPost): Promise<void> {
   const postId = post.postId || post.id || `post-${Date.now()}`;
   const path = `${COLLECTIONS.COMMUNITY_POSTS}/${postId}`;
+
+  let cleanImageUrl = post.imageUrl || '';
+  if (cleanImageUrl.startsWith('data:') || cleanImageUrl.startsWith('blob:')) {
+    try {
+      cleanImageUrl = await uploadMediaToStorage(cleanImageUrl, 'communication', 'community_post');
+    } catch {
+      cleanImageUrl = '';
+    }
+  }
+
   const postPayload = {
     postId,
     id: postId,
     customerId: post.customerId || post.customerCode || 'CUST-GENERAL',
     customerCode: post.customerCode || post.customerId || 'CUST-GENERAL',
     shopName: post.shopName || 'Wholesale Buyer',
-    imageUrl: post.imageUrl || '',
-    image: post.imageUrl || '',
+    imageUrl: cleanImageUrl,
+    image: cleanImageUrl,
     caption: post.caption || '',
     text: post.caption || '',
     message: post.caption || '',
@@ -394,7 +744,19 @@ export async function syncMessageToFirebase(message: ChatMessage): Promise<void>
   const shopName = message.shopName || '';
   const sender = message.sender || 'customer';
   const type = message.type || (message.audioUri ? 'voice' : message.imageUri ? 'image' : 'text');
-  const mediaUrl = message.mediaUrl || message.imageUri || message.audioUri || null;
+  let mediaUrl = message.mediaUrl || message.imageUri || message.audioUri || '';
+
+  // Direct Cloud Storage upload pipeline - Never save raw Base64 or local blob strings to Firestore
+  if (mediaUrl && (mediaUrl.startsWith('data:') || mediaUrl.startsWith('blob:'))) {
+    try {
+      const folder: MediaFolder = type === 'voice' ? 'voice_notes' : 'communication';
+      const prefix = type === 'voice' ? 'chat_voice' : 'chat_image';
+      mediaUrl = await uploadMediaToStorage(mediaUrl, folder, prefix);
+    } catch (uploadErr) {
+      console.warn('[SyncMessage] Failed to upload media to storage, stripping raw media:', uploadErr);
+      mediaUrl = '';
+    }
+  }
 
   const payload: any = {
     id: msgId,
@@ -406,11 +768,11 @@ export async function syncMessageToFirebase(message: ChatMessage): Promise<void>
     type,
     text: message.text || '',
     message: message.text || '',
-    mediaUrl,
-    imageUri: type === 'image' ? mediaUrl : (message.imageUri || null),
-    imageUrl: type === 'image' ? mediaUrl : (message.imageUri || null),
-    audioUri: type === 'voice' ? mediaUrl : (message.audioUri || null),
-    audioUrl: type === 'voice' ? mediaUrl : (message.audioUri || null),
+    mediaUrl: mediaUrl || null,
+    imageUri: type === 'image' ? (mediaUrl || null) : (message.imageUri && !message.imageUri.startsWith('data:') ? message.imageUri : null),
+    imageUrl: type === 'image' ? (mediaUrl || null) : (message.imageUri && !message.imageUri.startsWith('data:') ? message.imageUri : null),
+    audioUri: type === 'voice' ? (mediaUrl || null) : (message.audioUri && !message.audioUri.startsWith('data:') ? message.audioUri : null),
+    audioUrl: type === 'voice' ? (mediaUrl || null) : (message.audioUri && !message.audioUri.startsWith('data:') ? message.audioUri : null),
     isRead: message.isRead ?? false,
     read: message.isRead ?? false,
     timestamp: serverTimestamp(),
@@ -517,3 +879,193 @@ export async function deleteMessageFromFirebase(messageId: string, customerId?: 
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
+
+/* ==========================================================================
+   DATABASE MAINTENANCE & CLEAN SCANNER (TASK 4)
+   ========================================================================== */
+
+export interface DatabaseScanResult {
+  orphanedOrders: Array<{
+    id: string;
+    orderNumber?: string;
+    customerId: string;
+    customerCode?: string;
+    shopName: string;
+    totalAmount?: number;
+    createdAt?: number;
+    docRef: any;
+  }>;
+  abandonedCarts: Array<{
+    id: string;
+    collectionName: string;
+    customerId?: string;
+    itemsCount: number;
+    updatedAt?: number;
+    reason: string;
+    docRef: any;
+  }>;
+  invalidPhotos: Array<{
+    id: string;
+    photoCode?: string;
+    collectionName: string;
+    reason: string;
+    docRef: any;
+  }>;
+  totalFound: number;
+  scannedAt: number;
+}
+
+export async function scanDatabaseForOrphansAndStaleData(): Promise<DatabaseScanResult> {
+  const result: DatabaseScanResult = {
+    orphanedOrders: [],
+    abandonedCarts: [],
+    invalidPhotos: [],
+    totalFound: 0,
+    scannedAt: Date.now()
+  };
+
+  try {
+    // 1. Gather all valid customer IDs & Codes
+    const validCustomers = new Set<string>();
+    const custSnap = await getDocs(collection(db, COLLECTIONS.CUSTOMERS));
+    custSnap.forEach(d => {
+      validCustomers.add(d.id);
+      const data = d.data();
+      if (data.customerId) validCustomers.add(data.customerId);
+      if (data.customerCode) validCustomers.add(data.customerCode);
+    });
+
+    // 2. Scan Orders for orphaned orders
+    const orderSnap = await getDocs(collection(db, COLLECTIONS.ORDERS));
+    orderSnap.forEach(d => {
+      const data = d.data();
+      const cId = data.customerId || '';
+      const cCode = data.customerCode || '';
+      // If neither customerId nor customerCode matches any registered customer in customers collection
+      const isOrphan = (cId && !validCustomers.has(cId)) || (!cId && !cCode) || (cCode && !validCustomers.has(cCode));
+      if (isOrphan) {
+        result.orphanedOrders.push({
+          id: d.id,
+          orderNumber: data.orderId || d.id,
+          customerId: cId,
+          customerCode: cCode,
+          shopName: data.shopName || 'Unknown Shop',
+          totalAmount: data.totalAmount || 0,
+          createdAt: typeof data.createdAt === 'number' ? data.createdAt : undefined,
+          docRef: d.ref
+        });
+      }
+    });
+
+    // 3. Scan Carts ('carts', 'cart') for empty or stale (>24h old)
+    const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
+    
+    for (const colName of ['carts', 'cart']) {
+      try {
+        const cartSnap = await getDocs(collection(db, colName));
+        cartSnap.forEach(d => {
+          const data = d.data();
+          const items = data.items || [];
+          const itemsCount = Array.isArray(items) ? items.length : 0;
+          const updated = data.updatedAt || data.createdAt || 0;
+          
+          if (itemsCount === 0) {
+            result.abandonedCarts.push({
+              id: d.id,
+              collectionName: colName,
+              customerId: data.customerId || d.id,
+              itemsCount: 0,
+              updatedAt: updated,
+              reason: 'Empty Cart',
+              docRef: d.ref
+            });
+          } else if (updated > 0 && updated < twentyFourHoursAgo) {
+            result.abandonedCarts.push({
+              id: d.id,
+              collectionName: colName,
+              customerId: data.customerId || d.id,
+              itemsCount,
+              updatedAt: updated,
+              reason: 'Abandoned Cart (>24h old)',
+              docRef: d.ref
+            });
+          }
+        });
+      } catch {}
+    }
+
+    // 4. Scan Photos ('photos', 'catalog_photos') for broken or corrupted records
+    for (const colName of [COLLECTIONS.PHOTOS, COLLECTIONS.CATALOG_PHOTOS]) {
+      try {
+        const photoSnap = await getDocs(collection(db, colName));
+        photoSnap.forEach(d => {
+          const data = d.data();
+          const img = data.imageUri || data.imageUrl || '';
+          const code = data.photoCode || '';
+
+          if (!img || typeof img !== 'string' || img.trim() === '') {
+            result.invalidPhotos.push({
+              id: d.id,
+              photoCode: code || 'UNKNOWN',
+              collectionName: colName,
+              reason: 'Missing Image URL',
+              docRef: d.ref
+            });
+          } else if (!code || typeof code !== 'string' || code.trim() === '') {
+            result.invalidPhotos.push({
+              id: d.id,
+              photoCode: 'BLANK_SKU',
+              collectionName: colName,
+              reason: 'Missing Product SKU',
+              docRef: d.ref
+            });
+          }
+        });
+      } catch {}
+    }
+
+    result.totalFound = result.orphanedOrders.length + result.abandonedCarts.length + result.invalidPhotos.length;
+    return result;
+  } catch (error) {
+    console.error('scanDatabaseForOrphansAndStaleData error:', error);
+    throw error;
+  }
+}
+
+export async function executeDatabaseCleanup(scanResult: DatabaseScanResult): Promise<{
+  cleanedOrders: number;
+  cleanedCarts: number;
+  cleanedPhotos: number;
+}> {
+  const allRefs: any[] = [];
+  let cleanedOrders = 0;
+  let cleanedCarts = 0;
+  let cleanedPhotos = 0;
+
+  scanResult.orphanedOrders.forEach(o => {
+    if (o.docRef) { allRefs.push(o.docRef); cleanedOrders++; }
+  });
+  scanResult.abandonedCarts.forEach(c => {
+    if (c.docRef) { allRefs.push(c.docRef); cleanedCarts++; }
+  });
+  scanResult.invalidPhotos.forEach(p => {
+    if (p.docRef) { allRefs.push(p.docRef); cleanedPhotos++; }
+  });
+
+  const uniqueMap = new Map<string, any>();
+  allRefs.forEach(r => {
+    if (r && r.path) uniqueMap.set(r.path, r);
+  });
+
+  const refsArray = Array.from(uniqueMap.values());
+  const batchSize = 400;
+  for (let i = 0; i < refsArray.length; i += batchSize) {
+    const batch = writeBatch(db);
+    const chunk = refsArray.slice(i, i + batchSize);
+    chunk.forEach(r => batch.delete(r));
+    await batch.commit();
+  }
+
+  return { cleanedOrders, cleanedCarts, cleanedPhotos };
+}
+

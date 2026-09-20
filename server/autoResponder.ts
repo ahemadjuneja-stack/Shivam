@@ -14,9 +14,14 @@ export function initGeminiAutoResponder() {
 
   console.log('Initializing Gemini Auto-Responder listener on chat_messages...');
 
-  const messagesCol = collection(db, COLLECTIONS.MESSAGES);
-  
-  onSnapshot(messagesCol, async (snapshot) => {
+  let unsubscribe: (() => void) | null = null;
+  let reconnectTimer: NodeJS.Timeout | null = null;
+
+  const startListener = () => {
+    try {
+      const messagesCol = collection(db, COLLECTIONS.MESSAGES);
+      
+      unsubscribe = onSnapshot(messagesCol, async (snapshot) => {
     for (const change of snapshot.docChanges()) {
       if (change.type === 'added') {
         const msgDoc = change.doc;
@@ -162,6 +167,20 @@ STRICT RULES:
       }
     }
   }, (err) => {
-    console.error('Auto-responder Firestore listener error:', err);
+    console.warn('Auto-responder Firestore listener stream notice (reconnecting):', err.message);
+    if (unsubscribe) {
+      try { unsubscribe(); } catch {}
+      unsubscribe = null;
+    }
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(startListener, 5000);
   });
+    } catch (err) {
+      console.warn('Auto-responder startListener notice (retrying in 5s):', err);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(startListener, 5000);
+    }
+  };
+
+  startListener();
 }

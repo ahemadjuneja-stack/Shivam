@@ -27,15 +27,20 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
 
-  // Skip non-GET requests or firebase system endpoints
+  // STRICT RULE: Completely bypass all Firestore, Firebase, Google APIs, WebSocket, and API endpoints
   if (
     event.request.method !== 'GET' || 
+    requestUrl.protocol.startsWith('ws') ||
     requestUrl.origin.includes('firestore.googleapis.com') ||
     requestUrl.origin.includes('firebaseinstallations.googleapis.com') ||
     requestUrl.origin.includes('firebaselogging.googleapis.com') ||
-    requestUrl.origin.includes('identitytoolkit.googleapis.com')
+    requestUrl.origin.includes('identitytoolkit.googleapis.com') ||
+    requestUrl.origin.includes('firebaseio.com') ||
+    requestUrl.origin.includes('googleapis.com') ||
+    requestUrl.origin.includes('google.com') ||
+    requestUrl.pathname.startsWith('/api')
   ) {
-    return;
+    return; // Allow browser to hit live server directly without intercepting
   }
 
   // 1. Image Cache Strategy: Cache-First (Stale-While-Revalidate)

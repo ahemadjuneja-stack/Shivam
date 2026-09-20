@@ -1,6 +1,7 @@
 import { useAppStore } from '../store';
 import { Trash2, Send, Minus, Plus, ShoppingBag } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 
 export function Cart() {
   const cart = useAppStore(state => state.cart);
@@ -9,15 +10,29 @@ export function Cart() {
   const currentCustomer = useAppStore(state => state.currentCustomer);
   const placeOrder = useAppStore(state => state.placeOrder);
   const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (!currentCustomer) {
       alert('Please login as a customer shop first!');
       return;
     }
-    placeOrder();
-    alert('Order placed and synced to Firestore successfully!');
-    navigate('/');
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      alert("Network Error: Please check your internet connection and try again.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const success = await placeOrder();
+      setIsSubmitting(false);
+      if (success) {
+        alert('Order placed and synced to Firestore successfully!');
+        navigate('/');
+      }
+    } catch (err: any) {
+      setIsSubmitting(false);
+      alert("Network Error: Please check your internet connection and try again.");
+    }
   };
 
   if (cart.length === 0) {
@@ -44,7 +59,11 @@ export function Cart() {
         <div className="divide-y divide-slate-700">
           {cart.map((item, idx) => (
             <div key={idx} className="p-3 sm:p-4 flex items-center gap-3 sm:gap-4">
-              <img src={item.imageUri} alt={item.photoCode} className="w-16 h-16 rounded-lg object-cover border border-slate-600 flex-shrink-0" />
+              <img 
+                src={item.imageUri || item.imageUrl || (item as any).image || (item as any).photo || ''} 
+                alt={item.photoCode} 
+                className="w-16 h-16 rounded-lg object-cover border border-slate-600 flex-shrink-0" 
+              />
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-white text-xs sm:text-sm truncate">
                   {item.photoCode} • Option {item.optionLetter}
@@ -114,10 +133,10 @@ export function Cart() {
 
         <button 
           onClick={handlePlaceOrder}
-          disabled={!currentCustomer}
+          disabled={!currentCustomer || isSubmitting}
           className="mt-5 w-full bg-brand-gold hover:bg-brand-gold-light text-black font-black py-3.5 rounded-xl flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
         >
-          <Send size={18} /> Submit Wholesale Order
+          <Send size={18} /> {isSubmitting ? 'Submitting to Firestore...' : 'Submit Wholesale Order'}
         </button>
       </div>
     </div>

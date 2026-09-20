@@ -172,7 +172,10 @@ export function Home() {
 
   // Get current quantity for a photo's option letter from cart
   const getOptionQty = (photoId: string, optionLetter: string) => {
-    const item = cart.find(c => c.photoId === photoId && c.optionLetter === optionLetter);
+    const item = cart.find(c => 
+      (c.photoId === photoId && (c.optionLetter || 'A') === optionLetter) ||
+      (c.id === `${photoId}_${optionLetter}`)
+    );
     return item ? item.quantity : 0;
   };
 

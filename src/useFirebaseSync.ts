@@ -253,7 +253,22 @@ export function useFirebaseSync() {
               shopName: data.shopName || '',
               cityName: data.cityName || '',
               mobileNumber: data.mobileNumber || '',
-              items: Array.isArray(data.items) ? data.items : [],
+              items: Array.isArray(data.items) ? data.items.map((item: any) => {
+                const resolvedImage = 
+                  item.imageUri || 
+                  item.imageUrl || 
+                  item.image || 
+                  item.photo || 
+                  (Array.isArray(item.images) && item.images[0]) || 
+                  '';
+                return {
+                  ...item,
+                  imageUri: resolvedImage,
+                  imageUrl: resolvedImage, // Dual-key compatibility
+                  photoCode: item.photoCode || item.code || item.name || 'SKU',
+                  quantity: Number(item.quantity || 1)
+                };
+              }) : [],
               totalItemsCount: typeof data.totalItemsCount === 'number' 
                 ? data.totalItemsCount 
                 : (Array.isArray(data.items) ? data.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0),

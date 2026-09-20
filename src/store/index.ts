@@ -19,7 +19,6 @@ import {
   deletePhotoFromFirebase, 
   syncCustomerToFirebase, 
   deleteCustomerFromFirebase,
-  syncOrderToFirebase, 
   updateOrderStatusInFirebase, 
   deleteOrderFromFirebase,
   syncMessageToFirebase,
@@ -31,8 +30,12 @@ import {
   syncSubCategoryToFirebase,
   batchUpdateCategoriesOrder,
   batchUpdateSubCategoriesOrder,
-  batchUpdatePhotosOrder
+  batchUpdatePhotosOrder,
+  db
 } from '../firebase';
+import { uploadMediaToStorage } from '../services/storageService';
+import { doc, setDoc } from 'firebase/firestore';
+import { generateOrderId } from '../lib/idGenerator';
 
 interface AppState {
   // Catalog Data
@@ -76,7 +79,7 @@ interface AppState {
   removeFromCart: (index: number) => void;
   clearCart: () => void;
   setCurrentCustomer: (customer: Customer | null) => void;
-  placeOrder: () => void;
+  placeOrder: () => Promise<boolean>;
   addMessage: (message: ChatMessage) => void;
   
   // Community Actions
@@ -94,7 +97,7 @@ interface AppState {
   addSubCategory: (subCategory: SubCategory) => void;
   addPhoto: (photo: CatalogPhoto) => void;
   updatePhoto: (photoId: string, data: Partial<CatalogPhoto>) => void;
-  deletePhoto: (photoId: string) => void;
+  deletePhoto: (photoId: string, photoCode?: string) => void;
   reorderCategories: (categories: CategoryItem[]) => void;
   reorderSubCategories: (subCategories: SubCategory[]) => void;
   reorderPhotos: (photos: CatalogPhoto[]) => void;
@@ -213,9 +216,59 @@ export const useAppStore = create<AppState>()(
 
       setIsCartOpen: (open) => set({ isCartOpen: open }),
 
-      addToCart: (item) => set((state) => ({ cart: [...state.cart, item] })),
+      addToCart: (item) => set((state) => {
+        const targetPhotoCode = item.photoCode || (item as any).code || 'SKU';
+        const targetOption = item.optionLetter || item.variant || 'A';
+        const targetId = item.id || `${item.photoId || targetPhotoCode}_${targetOption}`;
+
+        const existingIdx = state.cart.findIndex(i => {
+          if (item.photoId && i.photoId && i.photoId === item.photoId && (i.optionLetter || 'A') === targetOption) return true;
+          if (i.id && targetId && i.id === targetId) return true;
+          if (i.photoCode && targetPhotoCode && i.photoCode === targetPhotoCode && (i.optionLetter || 'A') === targetOption) return true;
+          if ((i.photoCode || i.id) === (item.photoCode || item.id)) return true;
+          return false;
+        });
+
+        const addedQty = Number(item.quantity || 1);
+
+        if (existingIdx > -1) {
+          const updated = [...state.cart];
+          const newQty = (Number(updated[existingIdx].quantity) || 0) + addedQty;
+          if (newQty <= 0) {
+            updated.splice(existingIdx, 1);
+            return { cart: updated };
+          }
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            quantity: newQty,
+            imageUri: updated[existingIdx].imageUri || item.imageUri || (item as any).imageUrl || '',
+            imageUrl: updated[existingIdx].imageUrl || item.imageUrl || item.imageUri || ''
+          };
+          return { cart: updated };
+        } else {
+          if (addedQty <= 0) return state;
+          const newItem: OrderCartItem = {
+            ...item,
+            id: targetId,
+            photoCode: targetPhotoCode,
+            optionLetter: targetOption,
+            quantity: Math.max(1, addedQty),
+            imageUri: item.imageUri || (item as any).imageUrl || '',
+            imageUrl: item.imageUrl || item.imageUri || ''
+          };
+          return { cart: [...state.cart, newItem] };
+        }
+      }),
       setItemQuantity: (photo, optionLetter, quantity) => set((state) => {
-        const existingIdx = state.cart.findIndex(i => i.photoId === photo.id && i.optionLetter === optionLetter);
+        const targetPhotoCode = photo.photoCode || (photo as any).code || 'SKU';
+        const targetId = `${photo.id}_${optionLetter}`;
+
+        const existingIdx = state.cart.findIndex(i => 
+          (i.photoId === photo.id && (i.optionLetter || 'A') === optionLetter) ||
+          (i.photoCode === targetPhotoCode && (i.optionLetter || 'A') === optionLetter) ||
+          i.id === targetId
+        );
+
         if (quantity <= 0) {
           if (existingIdx !== -1) {
             const updated = [...state.cart];
@@ -229,22 +282,37 @@ export const useAppStore = create<AppState>()(
         const variantObj = variants.find(v => v.key === optionLetter);
         const minQty = variantObj ? variantObj.defaultQuantity : (photo.defaultQuantity || 6);
 
+        const resolvedPhotoImg = 
+          photo.imageUri || 
+          (photo as any).imageUrl || 
+          (photo as any).image || 
+          (photo as any).photo || 
+          (Array.isArray((photo as any).images) && (photo as any).images[0]) || 
+          '';
+
         if (existingIdx !== -1) {
           const updated = [...state.cart];
-          updated[existingIdx] = { ...updated[existingIdx], quantity, defaultQuantity: minQty };
+          updated[existingIdx] = { 
+            ...updated[existingIdx], 
+            quantity, 
+            defaultQuantity: minQty,
+            imageUri: updated[existingIdx].imageUri || resolvedPhotoImg,
+            imageUrl: updated[existingIdx].imageUrl || resolvedPhotoImg
+          };
           return { cart: updated };
         } else {
           const newItem: OrderCartItem = {
             photoId: photo.id,
-            photoCode: photo.photoCode,
-            imageUri: photo.imageUri,
+            photoCode: targetPhotoCode,
+            imageUri: resolvedPhotoImg,
+            imageUrl: resolvedPhotoImg,
             categoryId: photo.categoryId,
             subCategoryName: photo.subCategoryName,
             optionLetter,
             quantity,
             defaultQuantity: minQty,
-            id: `${photo.id}_${optionLetter}`,
-            name: `${photo.photoCode} (Option ${optionLetter})`,
+            id: targetId,
+            name: `${targetPhotoCode} (Option ${optionLetter})`,
             variant: optionLetter,
             price: 0
           };
@@ -270,29 +338,75 @@ export const useAppStore = create<AppState>()(
       clearCart: () => set({ cart: [] }),
       setCurrentCustomer: (customer) => set({ currentCustomer: customer }),
 
-      placeOrder: () => set((state) => {
-        if (!state.currentCustomer || state.cart.length === 0) return state;
+      placeOrder: async () => {
+        const state = get();
+        if (!state.currentCustomer) {
+          alert("Please login or select your customer shop first!");
+          return false;
+        }
+        if (state.cart.length === 0) {
+          alert("Your order slip is empty. Please add items from the showroom.");
+          return false;
+        }
+
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          alert("Network Error: Please check your internet connection and try again.");
+          return false;
+        }
         
         const hasImitation = state.cart.some(item => item.categoryId === MainCategory.IMITATION);
         const hasCosmetics = state.cart.some(item => item.categoryId === MainCategory.COSMETICS);
         const hasHair = state.cart.some(item => item.categoryId === MainCategory.HAIR_ACCESSORIES);
 
-        const orderIdNumber = `ORD-${Math.floor(Math.random() * 90000) + 10000}`;
+        const orderIdNumber = generateOrderId();
         const custId = state.currentCustomer.customerId || state.currentCustomer.customerCode || 'CUST-GUEST';
 
-        const standardizedItems = state.cart.map(item => ({
-          id: `${item.photoId}_${item.optionLetter}`,
-          photoCode: item.photoCode,
-          name: `${item.photoCode} (Option ${item.optionLetter} - ${item.subCategoryName})`,
-          quantity: item.quantity,
-          variant: item.optionLetter,
-          price: 0,
-          photoId: item.photoId,
-          imageUri: item.imageUri,
-          categoryId: item.categoryId,
-          subCategoryName: item.subCategoryName,
-          optionLetter: item.optionLetter
-        }));
+        // Upload voice note asynchronously directly to Cloud Storage with strict timeout
+        let uploadedVoiceUrl: string = '';
+        if (state.orderVoiceNote) {
+          try {
+            uploadedVoiceUrl = await uploadMediaToStorage(
+              state.orderVoiceNote, 
+              'voice_notes', 
+              `order_voice_${orderIdNumber}`
+            );
+          } catch (audioErr) {
+            console.warn('Voice note upload skipped or timed out, continuing order write immediately:', audioErr);
+            uploadedVoiceUrl = '';
+          }
+        }
+
+        const standardizedItems = state.cart.map(item => {
+          const fallbackPhoto = state.photos.find(p => p.id === item.photoId || p.photoCode === item.photoCode);
+          const resolvedImage = 
+            item.imageUri || 
+            (item as any).imageUrl || 
+            (item as any).image || 
+            (item as any).photo || 
+            (Array.isArray((item as any).images) && (item as any).images[0]) || 
+            fallbackPhoto?.imageUri ||
+            (fallbackPhoto as any)?.imageUrl ||
+            (fallbackPhoto as any)?.image ||
+            '';
+          
+          return {
+            photoCode: item.photoCode || (item as any).code || (item as any).name || 'SKU',
+            imageUri: resolvedImage,
+            imageUrl: resolvedImage, // Dual-key compatibility
+            quantity: Number(item.quantity || 1),
+            category: item.categoryId || (item as any).category || fallbackPhoto?.categoryId || '',
+            categoryId: item.categoryId || (item as any).category || fallbackPhoto?.categoryId || '',
+            subCategoryName: item.subCategoryName || fallbackPhoto?.subCategoryName || '',
+            variant: item.variant || item.optionLetter || 'A',
+            optionLetter: item.optionLetter || item.variant || 'A',
+            price: Number((item as any).price) || 0,
+            photoId: item.photoId || fallbackPhoto?.id || '',
+            id: item.id || `${item.photoId || item.photoCode}_${item.optionLetter || item.variant || 'A'}`,
+            name: item.name || `${item.photoCode || 'SKU'} (Option ${item.optionLetter || item.variant || 'A'} - ${item.subCategoryName || ''})`
+          };
+        });
+
+        const totalQty = state.cart.reduce((sum, item) => sum + Number(item.quantity || 1), 0);
 
         const newOrder: WholesaleOrder = {
           orderId: orderIdNumber,
@@ -300,16 +414,19 @@ export const useAppStore = create<AppState>()(
           orderNumber: orderIdNumber,
           customerId: custId,
           customerCode: custId,
-          shopName: state.currentCustomer.shopName,
+          shopName: state.currentCustomer.shopName || '',
           cityName: state.currentCustomer.city || state.currentCustomer.cityName || '',
           mobileNumber: state.currentCustomer.phone || state.currentCustomer.mobileNumber || '',
           items: standardizedItems,
-          totalItemsCount: state.cart.reduce((sum, item) => sum + item.quantity, 0),
+          itemCount: standardizedItems.length,
+          totalItemsCount: totalQty,
           totalAmount: 0,
           orderNote: state.orderNote || '',
           notes: state.orderNote || '',
-          voiceNoteUrl: state.orderVoiceNote || null,
-          voiceNoteUri: state.orderVoiceNote || undefined,
+          voiceNoteUrl: uploadedVoiceUrl || '',
+          voiceUrl: uploadedVoiceUrl || '',
+          audioUrl: uploadedVoiceUrl || '',
+          voiceNoteUri: uploadedVoiceUrl || '',
           status: 'Pending',
           overallStatus: 'RECEIVED',
           imitationStatus: hasImitation ? 'PENDING' : 'NOT_APPLICABLE',
@@ -318,17 +435,28 @@ export const useAppStore = create<AppState>()(
           createdAt: Date.now()
         };
 
-        // Sync new order to Firebase Firestore in real-time
-        syncOrderToFirebase(newOrder).catch((e) => console.error('Firebase sync error for new order:', e));
+        try {
+          console.log("SENDING ORDER TO FIRESTORE:", newOrder);
+          // Strip any unexpected undefined values to ensure Firestore compliance
+          const sanitizedPayload = JSON.parse(JSON.stringify(newOrder));
+          const orderRef = doc(db, 'orders', orderIdNumber);
+          await setDoc(orderRef, sanitizedPayload);
+          console.log('Order successfully written directly to Firestore orders:', orderIdNumber);
 
-        return {
-          orders: [newOrder, ...state.orders],
-          cart: [],
-          orderNote: '',
-          orderVoiceNote: null,
-          isCartOpen: false
-        };
-      }),
+          set({
+            orders: [newOrder, ...state.orders],
+            cart: [],
+            orderNote: '',
+            orderVoiceNote: null,
+            isCartOpen: false
+          });
+          return true;
+        } catch (error: any) {
+          console.error("FIRESTORE ORDER WRITE ERROR:", error);
+          alert("Network Error: Please check your internet connection and try again.");
+          return false;
+        }
+      },
 
       addMessage: (message) => {
         syncMessageToFirebase(message).catch((e) => console.error('Firebase sync error for message:', e));
@@ -376,8 +504,28 @@ export const useAppStore = create<AppState>()(
       },
 
       addCustomer: (customer) => {
-        syncCustomerToFirebase(customer).catch((e) => console.error('Firebase sync error for customer:', e));
-        set((state) => ({ customers: [...state.customers, customer] }));
+        const newCustomerId = customer.customerId || customer.customerCode || `CUST-${Date.now().toString().slice(-4)}`;
+        const customerPayload = {
+          ...customer,
+          id: newCustomerId,
+          customerId: newCustomerId,
+          customerCode: newCustomerId,
+          status: customer.status || 'PENDING',
+          isVerified: (customer as any).isVerified !== undefined ? (customer as any).isVerified : false,
+          createdAt: typeof customer.createdAt === 'number' ? customer.createdAt : Date.now()
+        };
+
+        (async () => {
+          try {
+            const custRef = doc(db, 'customers', newCustomerId);
+            await setDoc(custRef, customerPayload, { merge: true });
+            console.log('Customer written directly to Firestore customers:', newCustomerId);
+          } catch (error) {
+            console.error("Firestore Register Error:", error);
+          }
+        })();
+
+        set((state) => ({ customers: [...state.customers, customerPayload as Customer] }));
       },
 
       updateCustomer: (customerKey, data) => {
@@ -402,6 +550,11 @@ export const useAppStore = create<AppState>()(
         deleteCustomerFromFirebase(customerKey).catch((e) => console.error('Firebase sync error on deleteCustomer:', e));
         set((state) => ({
           customers: state.customers.filter(c => c.customerId !== customerKey && c.customerCode !== customerKey),
+          orders: state.orders.filter(o => o.customerId !== customerKey && o.customerCode !== customerKey),
+          messages: state.messages.filter(m => m.customerId !== customerKey && m.customerCode !== customerKey),
+          cart: (state.currentCustomer?.customerId === customerKey || state.currentCustomer?.customerCode === customerKey)
+            ? []
+            : state.cart,
           currentCustomer: (state.currentCustomer?.customerId === customerKey || state.currentCustomer?.customerCode === customerKey)
             ? null
             : state.currentCustomer
@@ -467,10 +620,13 @@ export const useAppStore = create<AppState>()(
 
       addPhoto: (photo) => {
         const current = get().photos;
-        const maxIndex = current.reduce((m, p) => Math.max(m, p.orderIndex ?? p.sortOrder ?? 0), -1);
+        const cleanSku = photo.photoCode?.trim();
+        // Remove any existing duplicate SKU or ID to ensure fresh conflict-free record
+        const filtered = current.filter(p => p.id !== photo.id && (!cleanSku || p.photoCode?.trim() !== cleanSku));
+        const maxIndex = filtered.reduce((m, p) => Math.max(m, p.orderIndex ?? p.sortOrder ?? 0), -1);
         const newPhoto = { ...photo, orderIndex: maxIndex + 1, sortOrder: maxIndex + 2 };
         syncPhotoToFirebase(newPhoto).catch((e) => console.error('Firebase sync error on addPhoto:', e));
-        set((state) => ({ photos: [...state.photos, newPhoto] }));
+        set({ photos: [...filtered, newPhoto] });
       },
 
       reorderCategories: (categories) => {
@@ -502,10 +658,13 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
-      deletePhoto: (photoId) => {
-        deletePhotoFromFirebase(photoId).catch((e) => console.error('Firebase sync error on deletePhoto:', e));
+      deletePhoto: (photoId, photoCode) => {
+        const targetPhoto = get().photos.find(p => p.id === photoId || (photoCode && p.photoCode === photoCode));
+        const effectiveCode = photoCode || targetPhoto?.photoCode;
+        deletePhotoFromFirebase(photoId, effectiveCode).catch((e) => console.error('Firebase sync error on deletePhoto:', e));
         set((state) => ({
-          photos: state.photos.filter(p => p.id !== photoId)
+          photos: state.photos.filter(p => p.id !== photoId && (!effectiveCode || p.photoCode !== effectiveCode)),
+          cart: state.cart.filter(item => item.photoId !== photoId && (!effectiveCode || item.photoCode !== effectiveCode))
         }));
       },
 
@@ -523,8 +682,16 @@ export const useAppStore = create<AppState>()(
       }
     }),
     {
-      name: 'shivam-wholesale-clean-v7',
-      version: 7,
+      name: 'shivam-wholesale-clean-v8',
+      version: 8,
+      partialize: (state) => ({
+        currentCustomer: state.currentCustomer,
+        cart: state.cart,
+        orderNote: state.orderNote,
+        activeCategoryId: state.activeCategoryId,
+        activeSubCategoryId: state.activeSubCategoryId,
+        showroomScreenMode: state.showroomScreenMode
+      })
     }
   )
 );

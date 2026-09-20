@@ -21,6 +21,8 @@ import {
 import { useAppStore } from '../store';
 import { ChatMessage, CommunityPost } from '../types';
 import { AudioMessagePlayer } from './AudioMessagePlayer';
+import { generateMessageId } from '../lib/idGenerator';
+import { uploadMediaToStorage } from '../services/storageService';
 
 export function ChatModal({ 
   isOpen, 
@@ -113,9 +115,10 @@ export function ChatModal({
     const text = chatInputRef.current?.value.trim();
     if (!text) return;
     
+    const msgId = generateMessageId();
     const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      messageId: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: msgId,
+      messageId: msgId,
       customerId: effectiveCustomerId,
       customerCode: effectiveCustomerId,
       shopName: effectiveShopName,
@@ -150,28 +153,40 @@ export function ChatModal({
   };
 
   // Send Image Message
-  const handleSendImage = () => {
+  const handleSendImage = async () => {
     if (!selectedImage) return;
 
+    const imageToUpload = selectedImage;
+    const caption = imageCaption.trim();
+    setSelectedImage(null);
+    setImageCaption('');
+
+    const msgId = generateMessageId();
+    let cloudImageUrl = '';
+    try {
+      cloudImageUrl = await uploadMediaToStorage(imageToUpload, 'communication', 'chat_img');
+    } catch (err) {
+      console.warn('Failed to upload chat image to Cloud Storage:', err);
+    }
+
     const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      messageId: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: msgId,
+      messageId: msgId,
       customerId: effectiveCustomerId,
       customerCode: effectiveCustomerId,
       shopName: effectiveShopName,
       sender: isAdmin ? 'admin' : 'customer',
       type: 'image',
-      text: imageCaption.trim() || undefined,
-      mediaUrl: selectedImage,
-      imageUri: selectedImage,
+      text: caption || undefined,
+      mediaUrl: cloudImageUrl,
+      imageUri: cloudImageUrl,
+      imageUrl: cloudImageUrl,
       isRead: false,
       timestamp: Date.now(),
       createdAt: Date.now()
     };
 
     addMessage(newMsg);
-    setSelectedImage(null);
-    setImageCaption('');
   };
 
   // 3. Voice Recording Functions
@@ -192,29 +207,34 @@ export function ChatModal({
         if (e.data.size > 0) audioChunks.current.push(e.data);
       };
 
-      mediaRecorder.current.onstop = () => {
+      mediaRecorder.current.onstop = async () => {
         if (audioChunks.current.length === 0) return;
         const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = () => {
-          const audioBase64 = reader.result as string;
-          const newMsg: ChatMessage = {
-            id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            messageId: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            customerId: effectiveCustomerId,
-            customerCode: effectiveCustomerId,
-            shopName: effectiveShopName,
-            sender: isAdmin ? 'admin' : 'customer',
-            type: 'voice',
-            mediaUrl: audioBase64,
-            audioUri: audioBase64,
-            isRead: false,
-            timestamp: Date.now(),
-            createdAt: Date.now()
-          };
-          addMessage(newMsg);
+        const msgId = generateMessageId();
+
+        let cloudAudioUrl = '';
+        try {
+          cloudAudioUrl = await uploadMediaToStorage(audioBlob, 'voice_notes', 'chat_voice');
+        } catch (err) {
+          console.warn('Failed to upload chat voice to Cloud Storage:', err);
+        }
+
+        const newMsg: ChatMessage = {
+          id: msgId,
+          messageId: msgId,
+          customerId: effectiveCustomerId,
+          customerCode: effectiveCustomerId,
+          shopName: effectiveShopName,
+          sender: isAdmin ? 'admin' : 'customer',
+          type: 'voice',
+          mediaUrl: cloudAudioUrl,
+          audioUri: cloudAudioUrl,
+          audioUrl: cloudAudioUrl,
+          isRead: false,
+          timestamp: Date.now(),
+          createdAt: Date.now()
         };
+        addMessage(newMsg);
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -277,9 +297,24 @@ export function ChatModal({
     }
   };
 
-  const handleSubmitCommunityPost = (e: React.FormEvent) => {
+  const handleSubmitCommunityPost = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!postImagePreview && !postCaption.trim()) return;
+
+    const imageToUpload = postImagePreview;
+    const caption = postCaption.trim();
+    setPostCaption('');
+    setPostImagePreview(null);
+    setIsCreatingPost(false);
+
+    let cloudImageUrl = '';
+    if (imageToUpload) {
+      try {
+        cloudImageUrl = await uploadMediaToStorage(imageToUpload, 'communication', 'community_post');
+      } catch (err) {
+        console.warn('Failed to upload community post image:', err);
+      }
+    }
 
     const newPost: CommunityPost = {
       postId: `post-${Date.now()}`,
@@ -287,17 +322,14 @@ export function ChatModal({
       customerId: effectiveCustomerId,
       customerCode: effectiveCustomerId,
       shopName: effectiveShopName,
-      imageUrl: postImagePreview || '',
-      caption: postCaption.trim(),
+      imageUrl: cloudImageUrl,
+      caption,
       timestamp: Date.now(),
       likesCount: 0,
       likedBy: []
     };
 
     addCommunityPost(newPost);
-    setPostCaption('');
-    setPostImagePreview(null);
-    setIsCreatingPost(false);
   };
 
   return (
@@ -496,6 +528,7 @@ export function ChatModal({
                           <img 
                             src={mediaSource} 
                             alt="Attachment" 
+                            loading="lazy"
                             className="w-full max-h-64 object-cover cursor-pointer hover:opacity-95 transition"
                             onClick={() => window.open(mediaSource, '_blank')}
                           />

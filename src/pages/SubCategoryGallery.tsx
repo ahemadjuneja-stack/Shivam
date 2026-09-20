@@ -72,7 +72,10 @@ export function SubCategoryGallery() {
                     );
                   }
                   
-                  const currentQty = cart.find(i => i.photoId === photo.id && i.optionLetter === variant.key)?.quantity || 0;
+                  const currentQty = cart.find(i => 
+                    (i.photoId === photo.id && (i.optionLetter || 'A') === variant.key) || 
+                    i.id === `${photo.id}_${variant.key}`
+                  )?.quantity || 0;
                   const badge = letterBadgeColors[variant.key] || { bg: 'bg-indigo-600', text: 'text-white' };
 
                   return (
