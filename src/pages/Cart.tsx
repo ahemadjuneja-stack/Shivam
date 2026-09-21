@@ -63,6 +63,8 @@ export function Cart() {
               <img 
                 src={item.imageUri || item.imageUrl || (item as any).image || (item as any).photo || ''} 
                 alt={item.photoCode} 
+                loading="lazy"
+                decoding="async"
                 className="w-16 h-16 rounded-lg object-cover border border-slate-600 flex-shrink-0" 
               />
               <div className="flex-1 min-w-0">

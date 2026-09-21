@@ -11,11 +11,18 @@ import {
 import { CatalogPhoto, ShowroomVideo, getPhotoVariants } from '../types';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { HomeVideoSlider } from '../components/HomeVideoSlider';
+import { loadSubCategoriesForCategory, loadPhotosForCategory, loadPhotosForSubCategory } from '../useFirebaseSync';
 
 export function Home() {
   const rawCategories = useAppStore(state => state.categories);
   const rawSubCategories = useAppStore(state => state.subCategories);
   const currentCustomer = useAppStore(state => state.currentCustomer);
+
+  const syncError = useAppStore(state => state.syncError);
+  const isSubCategoriesLoading = useAppStore(state => state.isSubCategoriesLoading);
+  const isPhotosLoading = useAppStore(state => state.isPhotosLoading);
+  const hasMorePhotos = useAppStore(state => state.hasMorePhotos);
+  const loadMorePhotosFn = useAppStore(state => state.loadMorePhotosFn);
 
   const categories = rawCategories.filter(c => {
     if (!currentCustomer) return true;
@@ -50,7 +57,6 @@ export function Home() {
   // Screen modes: 'home' | 'subcategories' | 'gallery' | 'fullimage'
   const [screenMode, setScreenMode] = useState<'home' | 'subcategories' | 'gallery' | 'fullimage'>('home');
   const [selectedPhoto, setSelectedPhoto] = useState<CatalogPhoto | null>(null);
-  const [endOfCategorySuggestion, setEndOfCategorySuggestion] = useState(false);
 
   // Filtered lists
   const currentCategory = categories.find(c => c.id === activeCategoryId) || categories[0];
@@ -69,6 +75,19 @@ export function Home() {
 
   // Feedback notification
   const [qtyFeedback, setQtyFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeCategoryId) {
+      void loadSubCategoriesForCategory(activeCategoryId);
+      void loadPhotosForCategory(activeCategoryId);
+    }
+  }, [activeCategoryId]);
+
+  useEffect(() => {
+    if (activeSubCategoryId) {
+      void loadPhotosForSubCategory(activeSubCategoryId);
+    }
+  }, [activeSubCategoryId]);
 
   // 1. Select category from Home -> opens subcategory view
   const handleSelectCategory = (catId: string) => {
@@ -120,22 +139,14 @@ export function Home() {
   const handleNextPhoto = () => {
     setSlideDirection(1);
     if (galleryPhotos.length === 0) return;
-    if (activePhotoIndex === galleryPhotos.length - 1) {
-      setEndOfCategorySuggestion(true);
-    } else {
-      const nextIdx = activePhotoIndex + 1;
-      setSelectedPhoto(galleryPhotos[nextIdx]);
-    }
+    const nextIdx = Math.min(galleryPhotos.length - 1, activePhotoIndex + 1);
+    setSelectedPhoto(galleryPhotos[nextIdx]);
   };
 
   const handlePrevPhoto = () => {
     setSlideDirection(-1);
-    if (endOfCategorySuggestion) {
-      setEndOfCategorySuggestion(false);
-      return;
-    }
     if (galleryPhotos.length === 0) return;
-    const prevIdx = (activePhotoIndex - 1 + galleryPhotos.length) % galleryPhotos.length;
+    const prevIdx = Math.max(0, activePhotoIndex - 1);
     setSelectedPhoto(galleryPhotos[prevIdx]);
   };
 
@@ -147,12 +158,8 @@ export function Home() {
         if (e.key === 'ArrowRight') handleNextPhoto();
         if (e.key === 'ArrowLeft') handlePrevPhoto();
         if (e.key === 'Escape') {
-          if (endOfCategorySuggestion) {
-            setEndOfCategorySuggestion(false);
-          } else {
-            setScreenMode('gallery');
-            setShowroomScreenMode('gallery');
-          }
+          setScreenMode('gallery');
+          setShowroomScreenMode('gallery');
         }
       } else if (screenMode === 'gallery') {
         if (e.key === 'Escape') {
@@ -168,7 +175,7 @@ export function Home() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [screenMode, activePhotoIndex, galleryPhotos, endOfCategorySuggestion]);
+  }, [screenMode, activePhotoIndex, galleryPhotos]);
 
   // Get current quantity for a photo's option letter from cart
   const getOptionQty = (photoId: string, optionLetter: string) => {
@@ -211,11 +218,25 @@ export function Home() {
 
         {/* RIGHT/BOTTOM: CATEGORY GRID */}
         <div className="flex-1 w-full landscape:w-[35%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-3 sm:p-4 shadow-2xl overflow-y-auto scroll-smooth scrollbar-thin">
+          {syncError && (
+            <div className="mb-3 p-3 rounded-xl bg-red-950/80 border border-red-800 text-red-200 text-xs shadow flex items-center justify-between gap-2">
+              <span>⚠️ {syncError}</span>
+              <button 
+                onClick={() => useAppStore.setState({ syncError: null })}
+                className="px-2 py-0.5 rounded bg-red-800 hover:bg-red-700 text-white font-bold text-[10px]"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
           <div className="flex flex-col gap-4 pb-4">
             {categories.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-3">
-                <div className="w-7 h-7 border-2 border-brand-gold border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs font-semibold text-slate-400">Loading categories...</span>
+              <div className="flex flex-col gap-3">
+                {[1, 2, 3].map((n) => (
+                  <div key={n} className="w-full aspect-video rounded-xl bg-slate-800/60 animate-pulse border border-slate-800 p-3 flex flex-col justify-end">
+                    <div className="h-4 bg-slate-700/80 rounded w-1/2 mx-auto"></div>
+                  </div>
+                ))}
               </div>
             ) : (
               categories.map(cat => (
@@ -228,6 +249,8 @@ export function Home() {
                     <img
                       src={cat.thumbnailUrl}
                       alt={cat.displayName}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                   </div>
@@ -286,12 +309,25 @@ export function Home() {
 
         {/* Subcategories Grid: Sirf Thumbnail aur uske Niche Subcategory ka Naam */}
         <div className="flex-1 p-4 overflow-y-auto scrollbar-thin">
+          {syncError && (
+            <div className="mb-4 mx-auto max-w-2xl p-3 rounded-xl bg-red-950/80 border border-red-800 text-red-200 text-xs shadow flex items-center justify-between gap-2">
+              <span>⚠️ {syncError}</span>
+              <button 
+                onClick={() => useAppStore.setState({ syncError: null })}
+                className="px-2 py-0.5 rounded bg-red-800 hover:bg-red-700 text-white font-bold text-[10px]"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-3 landscape:grid-cols-4 gap-4 max-w-6xl mx-auto">
-            {categorySubList.length === 0 ? (
-              <div className="col-span-full flex flex-col items-center justify-center py-16 text-slate-500 gap-3">
-                <div className="w-7 h-7 border-2 border-brand-gold border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs font-semibold text-slate-400">Loading subcategories...</span>
-              </div>
+            {categorySubList.length === 0 || isSubCategoriesLoading ? (
+              [1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                <div key={n} className="flex flex-col gap-2">
+                  <div className="w-full aspect-video rounded-xl bg-slate-800/60 animate-pulse border border-slate-800" />
+                  <div className="h-3 bg-slate-800 rounded w-3/4 mx-auto animate-pulse" />
+                </div>
+              ))
             ) : (
               categorySubList.map((sub) => (
                 <button
@@ -304,6 +340,8 @@ export function Home() {
                     <img
                       src={sub.thumbnailUrl}
                       alt={sub.name}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                   </div>
@@ -351,12 +389,22 @@ export function Home() {
 
         {/* Gallery Grid (Strict 16:9 HDTV Thumbnails, ZERO ABCD badges on top!) */}
         <div className="flex-1 p-3 overflow-y-auto scrollbar-thin">
+          {syncError && (
+            <div className="mb-3 mx-auto max-w-2xl p-3 rounded-xl bg-red-950/80 border border-red-800 text-red-200 text-xs shadow flex items-center justify-between gap-2">
+              <span>⚠️ {syncError}</span>
+              <button 
+                onClick={() => useAppStore.setState({ syncError: null })}
+                className="px-2 py-0.5 rounded bg-red-800 hover:bg-red-700 text-white font-bold text-[10px]"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-3 landscape:grid-cols-4 gap-3 max-w-6xl mx-auto">
-            {galleryPhotos.length === 0 ? (
-              <div className="col-span-full flex flex-col items-center justify-center py-16 text-slate-500 gap-3">
-                <div className="w-7 h-7 border-2 border-brand-gold border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs font-semibold text-slate-400">Loading products...</span>
-              </div>
+            {galleryPhotos.length === 0 || isPhotosLoading ? (
+              [1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                <div key={n} className="aspect-video rounded-xl bg-slate-800/60 animate-pulse border border-slate-800" />
+              ))
             ) : (
               galleryPhotos.map((photo) => {
                 const orderedItems = cart.filter(c => c.photoId === photo.id);
@@ -368,10 +416,12 @@ export function Home() {
                     onClick={() => handleOpenFullImage(photo)}
                     className="group relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-brand-gold cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 shadow-lg flex items-center justify-center"
                   >
-                    {/* Clean 16:9 Photo without any ABCD overlay or item number */}
+                    {/* Clean 16:9 Photo Thumbnail */}
                     <img
-                      src={photo.imageUri}
+                      src={photo.thumbnailUrl || photo.imageUri}
                       alt={photo.photoCode}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
 
@@ -385,6 +435,18 @@ export function Home() {
                   </div>
                 );
               })
+            )}
+
+            {/* Infinite Scroll Load More Button */}
+            {hasMorePhotos && loadMorePhotosFn && galleryPhotos.length > 0 && (
+              <div className="col-span-full flex justify-center py-6">
+                <button
+                  onClick={() => loadMorePhotosFn()}
+                  className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-brand-gold font-bold text-xs border border-slate-700 transition active:scale-95 shadow-lg flex items-center gap-2"
+                >
+                  <span>Load More Products</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -409,134 +471,72 @@ export function Home() {
         className="flex-1 h-full rounded-xl bg-brand-navy-dark overflow-hidden relative flex items-center justify-center select-none"
         title="Double tap or pinch to zoom. Swipe to change."
       >
-        {endOfCategorySuggestion ? (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900/90 text-white animate-fadeIn p-6 z-10 absolute">
-            <h2 className="text-xl sm:text-2xl font-bold mb-8 text-center text-brand-gold">
-              You've reached the end of this folder!
-            </h2>
-            
-            {(() => {
-              const currentCategorySubList = subCategories.filter(s => s.categoryId === activeCategoryId);
-              const currentSubIdx = currentCategorySubList.findIndex(s => s.id === activeSubCategoryId);
-              const nextSubCategory = currentSubIdx >= 0 && currentSubIdx < currentCategorySubList.length - 1
-                  ? currentCategorySubList[currentSubIdx + 1]
-                  : null;
-
-              if (nextSubCategory) {
-                return (
-                  <div className="flex flex-col items-center gap-4">
-                    <p className="text-sm text-slate-400">Continue exploring:</p>
-                    <button
-                      onClick={() => {
-                        setEndOfCategorySuggestion(false);
-                        handleSelectSubCategory(nextSubCategory.id);
-                      }}
-                      className="group flex flex-col items-center gap-3 bg-slate-800 border border-slate-700 hover:border-brand-gold p-4 rounded-2xl transition shadow-lg active:scale-95"
-                    >
-                      <div className="w-40 sm:w-56 aspect-video rounded-lg overflow-hidden bg-black shadow-inner">
-                        <img 
-                          src={nextSubCategory.thumbnailUrl} 
-                          className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
-                        />
-                      </div>
-                      <span className="font-bold text-lg text-slate-200 group-hover:text-brand-gold">
-                        {nextSubCategory.name}
-                      </span>
-                    </button>
-                  </div>
-                );
-              } else {
-                return (
-                  <div className="flex flex-col items-center gap-6">
-                    <p className="text-sm text-slate-400">You've seen all folders in this category.</p>
-                    <button
-                      onClick={() => {
-                        setEndOfCategorySuggestion(false);
-                        setScreenMode('home');
-                        setShowroomScreenMode('home');
-                      }}
-                      className="px-6 py-3 rounded-xl bg-brand-gold text-black font-bold shadow-lg hover:bg-amber-400 transition active:scale-95"
-                    >
-                      Back to Categories
-                    </button>
-                  </div>
-                );
+        <AnimatePresence initial={false} custom={slideDirection}>
+          <motion.div
+            key={photo?.id || photo?.imageUri}
+            custom={slideDirection}
+            variants={{
+              enter: (direction: number) => ({
+                x: direction > 0 ? 300 : -300,
+                opacity: 0
+              }),
+              center: {
+                zIndex: 1,
+                x: 0,
+                opacity: 1
+              },
+              exit: (direction: number) => ({
+                zIndex: 0,
+                x: direction < 0 ? 300 : -300,
+                opacity: 0
+              })
+            }}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{
+              x: { type: "spring", stiffness: 300, damping: 30 },
+              opacity: { duration: 0.2 }
+            }}
+            drag={isZoomedIn ? false : "x"}
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={1}
+            onDragEnd={(_, { offset }: any) => {
+              if (offset.x < -50) {
+                handleNextPhoto();
+              } else if (offset.x > 50) {
+                handlePrevPhoto();
               }
-            })()}
-
-            <button
-              onClick={() => setEndOfCategorySuggestion(false)}
-              className="mt-8 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 font-bold hover:bg-slate-700 hover:text-white transition shadow text-sm"
+            }}
+            className="absolute w-full h-full"
+          >
+            <TransformWrapper
+              initialScale={1}
+              minScale={1}
+              maxScale={4}
+              centerOnInit={true}
+              wheel={{ step: 0.1 }}
+              doubleClick={{ step: 1 }}
+              pinch={{ step: 5 }}
+              panning={{ disabled: !isZoomedIn }}
+              onTransform={(ref: any) => {
+                setIsZoomedIn(ref.state.scale > 1.05);
+              }}
             >
-              Go Back
-            </button>
-          </div>
-        ) : (
-          <AnimatePresence initial={false} custom={slideDirection}>
-            <motion.div
-              key={photo?.id || photo?.imageUri}
-              custom={slideDirection}
-              variants={{
-                enter: (direction: number) => ({
-                  x: direction > 0 ? 300 : -300,
-                  opacity: 0
-                }),
-                center: {
-                  zIndex: 1,
-                  x: 0,
-                  opacity: 1
-                },
-                exit: (direction: number) => ({
-                  zIndex: 0,
-                  x: direction < 0 ? 300 : -300,
-                  opacity: 0
-                })
-              }}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                x: { type: "spring", stiffness: 300, damping: 30 },
-                opacity: { duration: 0.2 }
-              }}
-              drag={isZoomedIn ? false : "x"}
-              dragConstraints={{ left: 0, right: 0 }}
-              dragElastic={1}
-              onDragEnd={(_, { offset }: any) => {
-                if (offset.x < -50) {
-                  handleNextPhoto();
-                } else if (offset.x > 50) {
-                  handlePrevPhoto();
-                }
-              }}
-              className="absolute w-full h-full"
-            >
-              <TransformWrapper
-                initialScale={1}
-                minScale={1}
-                maxScale={4}
-                centerOnInit={true}
-                wheel={{ step: 0.1 }}
-                doubleClick={{ step: 1 }}
-                pinch={{ step: 5 }}
-                panning={{ disabled: !isZoomedIn }}
-                onTransform={(ref: any) => {
-                  setIsZoomedIn(ref.state.scale > 1.05);
-                }}
-              >
-                <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <img
-                    key={photo?.imageUri}
-                    src={photo?.imageUri}
-                    alt={photo?.photoCode}
-                    draggable={false}
-                    className="w-full h-full object-contain pointer-events-auto cursor-zoom-in"
-                  />
-                </TransformComponent>
-              </TransformWrapper>
-            </motion.div>
-          </AnimatePresence>
-        )}
+              <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center" }}>
+                <img
+                  key={photo?.imageUri}
+                  src={photo?.imageUri}
+                  alt={photo?.photoCode}
+                  loading="lazy"
+                  decoding="async"
+                  draggable={false}
+                  className="w-full h-full object-contain pointer-events-auto cursor-zoom-in"
+                />
+              </TransformComponent>
+            </TransformWrapper>
+          </motion.div>
+        </AnimatePresence>
 
         {/* Feedback Toast */}
         {qtyFeedback && (

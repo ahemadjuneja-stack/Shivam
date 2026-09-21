@@ -31,6 +31,7 @@ export interface CatalogPhoto {
   subCategoryName: string;
   photoCode: string;
   imageUri: string;
+  thumbnailUrl?: string;
   videoUri?: string; // Optional showcase video
   itemCount: number; // 2, 3, or 4
   aAvailable: boolean;

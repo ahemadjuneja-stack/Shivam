@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowUp, ArrowDown, Sparkles, Check } from 'lucide-react';
 import { useAppStore } from '../store';
+import { loadSubCategoriesForCategory, loadPhotosForCategory, loadPhotosForSubCategory } from '../useFirebaseSync';
 
 export function DisplayOrderManager() {
   const categories = useAppStore(state => state.categories);
@@ -15,6 +16,19 @@ export function DisplayOrderManager() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(categories[0]?.id || '');
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string>('');
   const [savedNotice, setSavedNotice] = useState(false);
+
+  useEffect(() => {
+    if (selectedCategoryId) {
+      void loadSubCategoriesForCategory(selectedCategoryId);
+      void loadPhotosForCategory(selectedCategoryId);
+    }
+  }, [selectedCategoryId]);
+
+  useEffect(() => {
+    if (selectedSubCategoryId) {
+      void loadPhotosForSubCategory(selectedSubCategoryId);
+    }
+  }, [selectedSubCategoryId]);
 
   const triggerSaveNotice = () => {
     setSavedNotice(true);

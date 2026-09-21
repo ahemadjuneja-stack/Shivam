@@ -8,24 +8,57 @@ import {
   Clock, 
   ShoppingBag, 
   FileQuestion, 
-  ShieldCheck
+  ShieldCheck,
+  UploadCloud
 } from 'lucide-react';
 import { 
   scanDatabaseForOrphansAndStaleData, 
   executeDatabaseCleanup, 
   DatabaseScanResult 
 } from '../firebase';
+import { runBase64Migration } from '../services/migrateBase64ToStorage';
 import { useAppStore } from '../store';
 
 export function DatabaseCleanManager() {
   const [isScanning, setIsScanning] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationLogs, setMigrationLogs] = useState<string[]>([]);
+  const [migrationSummary, setMigrationSummary] = useState<string | null>(null);
+
   const [scanResult, setScanResult] = useState<DatabaseScanResult | null>(null);
   const [cleanupSummary, setCleanupSummary] = useState<{
     cleanedOrders: number;
     cleanedCarts: number;
     cleanedPhotos: number;
   } | null>(null);
+
+  const handleRunMigration = async () => {
+    const confirmed = window.confirm(
+      'RUN BASE64 STORAGE MIGRATION\n\n' +
+      'This tool will scan Firestore collections (photos, catalog_photos, categories, subCategories, showroomVideos).\n' +
+      'Any inline Base64 data URIs will be converted to Blob, compressed, uploaded to Firebase Storage, and updated to clean Storage URLs in Firestore.\n\n' +
+      'Proceed with migration?'
+    );
+    if (!confirmed) return;
+
+    setIsMigrating(true);
+    setMigrationLogs([]);
+    setMigrationSummary(null);
+
+    try {
+      const res = await runBase64Migration((msg) => {
+        setMigrationLogs((prev) => [...prev, msg]);
+      });
+      setMigrationSummary(`Migration Finished! Scanned: ${res.totalDocsScanned} docs, Migrated: ${res.totalDocsMigrated} docs.`);
+    } catch (err: any) {
+      console.error('Migration error:', err);
+      setMigrationLogs((prev) => [...prev, `CRITICAL ERROR: ${err?.message || err}`]);
+      setMigrationSummary('Migration failed. Check console or logs.');
+    } finally {
+      setIsMigrating(false);
+    }
+  };
 
   const deleteOrderInStore = useAppStore(state => state.deleteOrder);
   const deletePhotoInStore = useAppStore(state => state.deletePhoto);
@@ -109,10 +142,19 @@ export function DatabaseCleanManager() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleRunMigration}
+            disabled={isMigrating || isScanning || isCleaning}
+            className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-xs font-black transition shadow-md disabled:opacity-50"
+          >
+            <UploadCloud size={14} className={isMigrating ? 'animate-bounce' : ''} />
+            <span>{isMigrating ? 'Migrating...' : 'Run Base64 Migration'}</span>
+          </button>
+
           <button
             onClick={handleScan}
-            disabled={isScanning || isCleaning}
+            disabled={isScanning || isCleaning || isMigrating}
             className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold transition disabled:opacity-50"
           >
             <RefreshCw size={14} className={isScanning ? 'animate-spin' : ''} />
@@ -121,7 +163,7 @@ export function DatabaseCleanManager() {
 
           <button
             onClick={handleClean}
-            disabled={isCleaning || isScanning}
+            disabled={isCleaning || isScanning || isMigrating}
             className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white rounded-xl text-xs font-black transition shadow-md disabled:opacity-50"
           >
             <Trash2 size={14} className={isCleaning ? 'animate-spin' : ''} />
@@ -129,6 +171,28 @@ export function DatabaseCleanManager() {
           </button>
         </div>
       </div>
+
+      {/* Migration Progress Log Panel */}
+      {(isMigrating || migrationLogs.length > 0) && (
+        <div className="my-4 p-4 rounded-2xl bg-slate-900 border border-amber-500/30 text-slate-200 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-xs text-amber-400 uppercase tracking-wider flex items-center gap-2">
+              <UploadCloud size={14} />
+              Base64 Migration Live Logs
+            </span>
+            {migrationSummary && (
+              <span className="text-xs font-bold text-emerald-400">{migrationSummary}</span>
+            )}
+          </div>
+          <div className="font-mono text-[11px] bg-black/80 p-3 rounded-xl max-h-48 overflow-y-auto space-y-1 text-slate-300 border border-slate-800 scrollbar-thin">
+            {migrationLogs.map((log, i) => (
+              <div key={i} className={log.includes('ERROR') ? 'text-red-400' : log.includes('Successfully') ? 'text-emerald-400' : 'text-slate-300'}>
+                {log}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Success Notification */}
       {cleanupSummary && (

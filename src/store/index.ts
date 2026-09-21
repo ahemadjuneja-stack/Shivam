@@ -37,6 +37,7 @@ import { uploadMediaToStorage } from '../services/storageService';
 import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { generateOrderId } from '../lib/idGenerator';
 import { savePendingVoice, getPendingVoice, deletePendingVoice, listPendingVoiceIds } from '../utils/voiceQueue';
+import { savePendingOrder, getPendingOrder, deletePendingOrder, listPendingOrderIds } from '../utils/orderQueue';
 
 const VOICE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 const voiceInFlight = new Set<string>();
@@ -81,6 +82,25 @@ export async function retryPendingVoices(): Promise<void> {
   }
 }
 
+export async function retryPendingOrders(): Promise<void> {
+  try {
+    const ids = await listPendingOrderIds();
+    for (const id of ids) {
+      try {
+        const item = await getPendingOrder(id);
+        if (!item) continue;
+        if (Date.now() - item.createdAt > 3*24*60*60*1000) { 
+          await deletePendingOrder(id); continue; 
+        }
+        await setDoc(doc(db, 'orders', id), item.payload, { merge: true });
+        await deletePendingOrder(id);
+        console.log('[OrderQueue] synced pending order:', id);
+        void uploadPendingVoice(id);
+      } catch (e) { console.error('[OrderQueue] retry failed:', id, e); }
+    }
+  } catch (e) { console.error('[OrderQueue] scan failed', e); }
+}
+
 interface AppState {
   // Catalog Data
   categories: CategoryItem[];
@@ -108,6 +128,13 @@ interface AppState {
   isRecordingVoice: boolean;
   stopVoiceRecordingFn: (() => void) | null;
   lastReadTimestamp: number;
+
+  // Sync & Loading State
+  syncError?: string | null;
+  isSubCategoriesLoading: boolean;
+  isPhotosLoading: boolean;
+  hasMorePhotos: boolean;
+  loadMorePhotosFn: (() => Promise<void>) | null;
 
   // Actions
   setShowroomScreenMode: (mode: 'home' | 'subcategories' | 'gallery' | 'fullimage') => void;
@@ -181,6 +208,12 @@ export const useAppStore = create<AppState>()(
       isRecordingVoice: false,
       stopVoiceRecordingFn: null,
       lastReadTimestamp: Date.now(),
+
+      syncError: null,
+      isSubCategoriesLoading: false,
+      isPhotosLoading: false,
+      hasMorePhotos: false,
+      loadMorePhotosFn: null,
 
       setShowroomScreenMode: (mode) => set({ showroomScreenMode: mode }),
       setOrderNote: (note) => set({ orderNote: note }),
@@ -481,15 +514,19 @@ export const useAppStore = create<AppState>()(
             }
           }
 
-          // 2) Write order, wait max 10s for server ack (write stays queued in persistent cache)
+          // 2) Write order, wait max 10s for server ack
           const writePromise = setDoc(orderRef, sanitizedPayload);
           const result = await Promise.race([
             writePromise.then(() => 'ok' as const),
             new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 10000)),
           ]);
           if (result === 'timeout') {
-            console.warn('Order write not acked in 10s, queued and will sync automatically:', orderIdNumber);
+            console.warn('Order not acked in 10s, saved to order queue for retry:', orderIdNumber);
+            try { await savePendingOrder(orderIdNumber, sanitizedPayload); } 
+            catch (e) { console.error('[OrderQueue] save failed', e); }
             writePromise.catch((e) => console.error('Queued order write failed later:', e));
+          } else {
+            deletePendingOrder(orderIdNumber).catch(() => {});
           }
 
           // 3) Background voice upload, do NOT await
@@ -755,9 +792,18 @@ export const useAppStore = create<AppState>()(
 );
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => { void retryPendingVoices(); });
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void retryPendingVoices();
+  window.addEventListener('online', () => { 
+    void retryPendingVoices(); 
+    void retryPendingOrders();
   });
-  setTimeout(() => { void retryPendingVoices(); }, 3000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      void retryPendingVoices();
+      void retryPendingOrders();
+    }
+  });
+  setTimeout(() => { 
+    void retryPendingVoices(); 
+    void retryPendingOrders();
+  }, 3000);
 }

@@ -1,8 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
   doc, 
   setDoc, 
   updateDoc, 
@@ -105,8 +103,7 @@ export async function uploadMediaToStorage(
 export const FIRESTORE_DATABASE_ID = "ai-studio-shivam-6138ca5c-1e3b-412f-957d-d52501eff503";
 
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-  experimentalAutoDetectLongPolling: true
+  experimentalForceLongPolling: true
 }, FIRESTORE_DATABASE_ID);
 
 
@@ -252,6 +249,11 @@ export async function syncPhotoToFirebase(photo: CatalogPhoto): Promise<void> {
       ...photo,
       updatedAt: Date.now()
     };
+
+    // Guard: Prevent base64 data URIs from being written to Firestore
+    if (photoPayload.imageUri && photoPayload.imageUri.startsWith('data:')) {
+      throw new Error('[Base64 Protection] Base64 data URIs cannot be saved to Firestore. Please upload image to Storage first.');
+    }
 
     const photoRef = doc(db, COLLECTIONS.PHOTOS, photo.id);
     await setDoc(photoRef, photoPayload, { merge: true });

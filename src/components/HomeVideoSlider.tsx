@@ -236,6 +236,7 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
                   }}
                   src={photo.videoUri}
                   poster={photo.imageUri}
+                  preload={isCurrent ? "metadata" : "none"}
                   autoPlay={isCurrent}
                   playsInline
                   muted={isMuted}
@@ -249,6 +250,8 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
                 <img 
                   src={photo.imageUri} 
                   alt={photo.photoCode} 
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-contain"
                 />
               )}

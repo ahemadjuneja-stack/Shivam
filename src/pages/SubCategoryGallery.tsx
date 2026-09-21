@@ -1,10 +1,18 @@
+import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAppStore } from '../store';
 import { Minus, Plus } from 'lucide-react';
 import { getPhotoVariants } from '../types';
+import { loadPhotosForSubCategory } from '../useFirebaseSync';
 
 export function SubCategoryGallery() {
   const { id } = useParams<{ id: string }>();
+
+  useEffect(() => {
+    if (id) {
+      void loadPhotosForSubCategory(id);
+    }
+  }, [id]);
   const currentCustomer = useAppStore(state => state.currentCustomer);
   const subCategory = useAppStore(state => state.subCategories.find(s => s.id === id));
   const category = useAppStore(state => state.categories.find(c => c.id === subCategory?.categoryId));
@@ -40,7 +48,7 @@ export function SubCategoryGallery() {
         {photos.map(photo => (
           <div key={photo.id} className="bg-brand-navy-card rounded-xl border border-slate-700 overflow-hidden shadow-lg">
             <div className="aspect-video bg-slate-900 relative">
-              <img src={photo.imageUri} alt={photo.photoCode} className="w-full h-full object-cover" />
+              <img src={photo.imageUri} alt={photo.photoCode} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               <div className="absolute top-2 left-2 bg-black/80 text-white font-mono text-xs px-2 py-1 rounded border border-slate-600">
                 {photo.photoCode}
               </div>

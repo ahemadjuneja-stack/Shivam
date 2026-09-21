@@ -1,8 +1,17 @@
+import { useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAppStore } from '../store';
+import { loadSubCategoriesForCategory, loadPhotosForCategory } from '../useFirebaseSync';
 
 export function CategoryGallery() {
   const { id } = useParams<{ id: string }>();
+
+  useEffect(() => {
+    if (id) {
+      void loadSubCategoriesForCategory(id);
+      void loadPhotosForCategory(id);
+    }
+  }, [id]);
   const currentCustomer = useAppStore(state => state.currentCustomer);
   
   const isCategoryAllowed = !currentCustomer || !currentCustomer.allowedCategoryIds || 
@@ -40,6 +49,8 @@ export function CategoryGallery() {
               <img
                 src={sub.thumbnailUrl}
                 alt={sub.name}
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               />
             </div>
