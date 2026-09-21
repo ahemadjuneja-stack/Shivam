@@ -47,7 +47,7 @@ export function CategoryGallery() {
             {/* 1. Strict 16:9 Thumbnail Image */}
             <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg">
               <img
-                src={sub.thumbnailUrl}
+                src={sub.thumbnailUrl?.includes('images.unsplash.com') ? sub.thumbnailUrl.replace('w=1280', 'w=640') : sub.thumbnailUrl}
                 alt={sub.name}
                 loading="lazy"
                 decoding="async"

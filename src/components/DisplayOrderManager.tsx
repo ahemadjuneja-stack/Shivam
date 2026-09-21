@@ -134,7 +134,13 @@ export function DisplayOrderManager() {
                   <span className="w-7 h-7 rounded-lg bg-slate-800 text-amber-400 flex items-center justify-center font-black text-xs">
                     #{idx + 1}
                   </span>
-                  <img src={cat.thumbnailUrl} alt={cat.displayName} className="w-10 h-10 rounded-lg object-cover border border-slate-700" />
+                  <img 
+                    src={cat.thumbnailUrl?.includes('images.unsplash.com') ? cat.thumbnailUrl.replace('w=1280', 'w=640') : cat.thumbnailUrl} 
+                    alt={cat.displayName} 
+                    loading="lazy" 
+                    decoding="async" 
+                    className="w-10 h-10 rounded-lg object-cover border border-slate-700" 
+                  />
                   <div>
                     <h4 className="text-sm font-bold text-white">{cat.displayName}</h4>
                     <span className="text-[10px] text-slate-400">ID: {cat.id}</span>
@@ -208,7 +214,13 @@ export function DisplayOrderManager() {
                     <span className="w-7 h-7 rounded-lg bg-slate-800 text-amber-400 flex items-center justify-center font-black text-xs">
                       #{idx + 1}
                     </span>
-                    <img src={sub.thumbnailUrl} alt={sub.name} className="w-10 h-10 rounded-lg object-cover border border-slate-700" />
+                    <img 
+                      src={sub.thumbnailUrl?.includes('images.unsplash.com') ? sub.thumbnailUrl.replace('w=1280', 'w=640') : sub.thumbnailUrl} 
+                      alt={sub.name} 
+                      loading="lazy" 
+                      decoding="async" 
+                      className="w-10 h-10 rounded-lg object-cover border border-slate-700" 
+                    />
                     <div>
                       <h4 className="text-sm font-bold text-white">{sub.name}</h4>
                       <span className="text-[10px] text-slate-400">{sub.photoCount || 0} Products • ID: {sub.id}</span>
@@ -315,7 +327,16 @@ export function DisplayOrderManager() {
                     <span className="w-7 h-7 rounded-lg bg-slate-800 text-amber-400 flex items-center justify-center font-black text-xs">
                       #{idx + 1}
                     </span>
-                    <img src={photo.imageUri} alt={photo.photoCode} className="w-12 h-12 rounded-lg object-cover border border-slate-700" />
+                    <img 
+                      src={(() => {
+                        const url = photo.thumbnailUrl || photo.imageUri;
+                        return url?.includes('images.unsplash.com') ? url.replace('w=1280', 'w=640') : url;
+                      })()} 
+                      alt={photo.photoCode} 
+                      loading="lazy" 
+                      decoding="async" 
+                      className="w-12 h-12 rounded-lg object-cover border border-slate-700" 
+                    />
                     <div>
                       <h4 className="text-sm font-bold text-white flex items-center gap-2">
                         {photo.photoCode}

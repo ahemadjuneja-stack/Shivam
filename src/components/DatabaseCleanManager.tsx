@@ -17,12 +17,27 @@ import {
   DatabaseScanResult 
 } from '../firebase';
 import { runBase64Migration } from '../services/migrateBase64ToStorage';
+import { fixAllStorageCache } from '../services/fixStorageCache';
 import { useAppStore } from '../store';
 
 export function DatabaseCleanManager() {
   const [isScanning, setIsScanning] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [isFixingCache, setIsFixingCache] = useState(false);
+
+  const handleFixStorageCache = async () => {
+    setIsFixingCache(true);
+    try {
+      const count = await fixAllStorageCache();
+      alert(`Fix Image Cache Complete!\nUpdated cacheControl metadata on ${count} files in Firebase Storage.`);
+    } catch (err: any) {
+      console.error('Fix image cache error:', err);
+      alert(`Error fixing storage cache: ${err?.message || err}`);
+    } finally {
+      setIsFixingCache(false);
+    }
+  };
   const [migrationLogs, setMigrationLogs] = useState<string[]>([]);
   const [migrationSummary, setMigrationSummary] = useState<string | null>(null);
 
@@ -143,6 +158,15 @@ export function DatabaseCleanManager() {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleFixStorageCache}
+            disabled={isFixingCache || isMigrating || isScanning || isCleaning}
+            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black transition shadow-md disabled:opacity-50"
+          >
+            <ShieldCheck size={14} className={isFixingCache ? 'animate-spin' : ''} />
+            <span>{isFixingCache ? 'Fixing Cache...' : 'Fix Image Cache'}</span>
+          </button>
+
           <button
             onClick={handleRunMigration}
             disabled={isMigrating || isScanning || isCleaning}

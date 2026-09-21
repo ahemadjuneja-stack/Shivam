@@ -247,7 +247,7 @@ export function Home() {
                 >
                   <div className="w-full aspect-[16/10] sm:aspect-video rounded-xl overflow-hidden bg-black border-2 border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center">
                     <img
-                      src={cat.thumbnailUrl}
+                      src={cat.thumbnailUrl?.includes('images.unsplash.com') ? cat.thumbnailUrl.replace('w=1280', 'w=640') : cat.thumbnailUrl}
                       alt={cat.displayName}
                       loading="lazy"
                       decoding="async"
@@ -338,7 +338,7 @@ export function Home() {
                   {/* 1. Strict 16:9 Thumbnail Image (Pure image, no text/folder icons over it) */}
                   <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg">
                     <img
-                      src={sub.thumbnailUrl}
+                      src={sub.thumbnailUrl?.includes('images.unsplash.com') ? sub.thumbnailUrl.replace('w=1280', 'w=640') : sub.thumbnailUrl}
                       alt={sub.name}
                       loading="lazy"
                       decoding="async"
@@ -418,7 +418,10 @@ export function Home() {
                   >
                     {/* Clean 16:9 Photo Thumbnail */}
                     <img
-                      src={photo.thumbnailUrl || photo.imageUri}
+                      src={(() => {
+                        const url = photo.thumbnailUrl || photo.imageUri;
+                        return url?.includes('images.unsplash.com') ? url.replace('w=1280', 'w=640') : url;
+                      })()}
                       alt={photo.photoCode}
                       loading="lazy"
                       decoding="async"

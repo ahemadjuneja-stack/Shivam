@@ -45,7 +45,7 @@ export async function compressAndUploadPhoto(
 
   // Generate compressed full image & thumbnail via canvas
   const fullBlob = await compressCanvasImage(blob, 1600, 0.8);
-  const thumbBlob = await compressCanvasImage(blob, 480, 0.7);
+  const thumbBlob = await compressCanvasImage(blob, 640, 0.7);
 
   const timestamp = Date.now();
   const fullPath = `${folder}/${prefix}_full_${timestamp}.jpg`;

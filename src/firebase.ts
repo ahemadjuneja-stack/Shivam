@@ -83,7 +83,8 @@ export async function uploadMediaToStorage(
 
   const uploadTask = async () => {
     const snapshot = await uploadBytes(fileRef, uploadableBlob as Blob, { 
-      contentType: (uploadableBlob as Blob).type || undefined 
+      contentType: (uploadableBlob as Blob).type || undefined,
+      cacheControl: 'public, max-age=31536000, immutable'
     });
     return await getDownloadURL(snapshot.ref);
   };

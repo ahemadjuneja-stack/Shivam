@@ -72,7 +72,10 @@ export async function compressCanvasImage(
 export async function uploadBlobToStorage(blob: Blob, path: string): Promise<string> {
   if (!storage) throw new Error('Firebase Storage instance is not available.');
   const fileRef = storageRef(storage, path);
-  const snapshot = await uploadBytes(fileRef, blob, { contentType: blob.type || 'image/jpeg' });
+  const snapshot = await uploadBytes(fileRef, blob, { 
+    contentType: blob.type || 'image/jpeg',
+    cacheControl: 'public, max-age=31536000, immutable'
+  });
   return await getDownloadURL(snapshot.ref);
 }
 
@@ -129,9 +132,9 @@ export async function runBase64Migration(
                 updates['videoUrl'] = videoUrl;
                 updates[key] = videoUrl;
               } else {
-                // Image: Compress full (max 1600px, 0.8) & thumbnail (max 480px, 0.7)
+                // Image: Compress full (max 1600px, 0.8) & thumbnail (max 640px, 0.7)
                 const fullBlob = await compressCanvasImage(originalBlob, 1600, 0.8);
-                const thumbBlob = await compressCanvasImage(originalBlob, 480, 0.7);
+                const thumbBlob = await compressCanvasImage(originalBlob, 640, 0.7);
 
                 const fullPath = `migrated/${colName}/${docSnap.id}_full_${Date.now()}.jpg`;
                 const thumbPath = `migrated/${colName}/${docSnap.id}_thumb_${Date.now()}.jpg`;
