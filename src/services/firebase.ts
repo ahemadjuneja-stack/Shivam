@@ -1,4 +1,4 @@
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db, COLLECTIONS, handleFirestoreError, OperationType } from '../firebase';
 import { uploadMediaToStorage } from './storageService';
 import { Customer, WholesaleOrder, OrderCartItem } from '../types';
@@ -113,15 +113,26 @@ export async function submitOrderDirectly(
 
   const totalItemsCount = cart.reduce((sum, item) => sum + Number(item.quantity || 1), 0);
 
-  // Upload voice note asynchronously directly to Cloud Storage with strict timeout
-  let uploadedVoiceUrl = '';
+  // Background non-blocking audio upload
   if (voiceNoteUrl) {
-    try {
-      uploadedVoiceUrl = await uploadMediaToStorage(voiceNoteUrl, 'voice_notes', `order_voice_${orderId}`);
-    } catch (audioErr) {
-      console.warn('Voice note upload skipped or timed out, continuing order write immediately:', audioErr);
-      uploadedVoiceUrl = '';
-    }
+    uploadMediaToStorage(voiceNoteUrl, 'voice_notes', `order_voice_${orderId}`)
+      .then(async (url) => {
+        if (url) {
+          try {
+            const targetOrderRef = doc(db, COLLECTIONS.ORDERS, orderId);
+            await updateDoc(targetOrderRef, {
+              voiceNoteUrl: url,
+              voiceUrl: url,
+              audioUrl: url,
+              voiceNoteUri: url
+            });
+            console.log('Background voice note attached successfully to order:', orderId);
+          } catch (updateErr) {
+            console.warn('Non-blocking voice note attachment notice:', updateErr);
+          }
+        }
+      })
+      .catch((err) => console.warn('Background voice note upload catch:', err));
   }
 
   const orderPayload: WholesaleOrder = {
@@ -139,10 +150,10 @@ export async function submitOrderDirectly(
     totalAmount: 0,
     orderNote: orderNote || '',
     notes: orderNote || '',
-    voiceNoteUrl: uploadedVoiceUrl || '',
-    voiceUrl: uploadedVoiceUrl || '',
-    audioUrl: uploadedVoiceUrl || '',
-    voiceNoteUri: uploadedVoiceUrl || '',
+    voiceNoteUrl: '',
+    voiceUrl: '',
+    audioUrl: '',
+    voiceNoteUri: '',
     status: 'Pending',
     overallStatus: 'RECEIVED',
     imitationStatus: 'PENDING',

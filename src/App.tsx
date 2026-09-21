@@ -23,7 +23,7 @@ import {
   ClipboardList
 } from 'lucide-react';
 import React, { useState, useRef, useEffect } from 'react';
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, serverTimestamp, getDocFromServer } from 'firebase/firestore';
 import { db, COLLECTIONS, messaging, deleteCustomerWithCascade } from './firebase';
 import { getToken, onMessage } from 'firebase/messaging';
 import { ChatModal } from './components/ChatModal';
@@ -216,6 +216,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [fcmAlert, setFcmAlert] = useState<{ title: string; body: string } | null>(null);
   const [networkOnline, setNetworkOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
   const [isDispatching, setIsDispatching] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [regDebugStatus, setRegDebugStatus] = useState<string>('');
 
   useEffect(() => {
     const handleOnline = () => setNetworkOnline(true);
@@ -473,6 +475,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setRegDebugStatus('1: button clicked');
     const phoneVal = formData.mobileNumber?.trim() || formData.phone?.trim() || '';
     const shopName = formData.shopName.trim();
     const ownerName = formData.ownerName.trim();
@@ -481,61 +484,99 @@ function AppShell({ children }: { children: React.ReactNode }) {
     const pin = formData.pin?.trim() || '1111';
 
     if (!shopName || !ownerName || !phoneVal || !city || !address) {
-      alert('Please fill out all fields: Shop Name, Owner Full Name, Mobile Number, City, and Address.');
+      setRegDebugStatus('STOPPED: Mandatory fields missing');
       return;
     }
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      alert("Network Error: Please check your internet connection and try again.");
-      return;
-    }
-
-    const newCustomerId = `CUST-${Date.now().toString().slice(-4)}`;
-
-    const customerFirestorePayload = {
-      id: newCustomerId,
-      customerId: newCustomerId,
-      customerCode: newCustomerId,
-      shopName,
-      ownerName,
-      contactPerson: ownerName,
-      phone: phoneVal,
-      mobileNumber: phoneVal,
-      city,
-      cityName: city,
-      address,
-      pin,
-      status: 'PENDING',
-      isVerified: false,
-      role: 'User',
-      allowedCategoryIds: ['all'],
-      allowedSubCategoryIds: ['all'],
-      isOnline: true,
-      lastActive: Date.now(),
-      createdAt: Date.now()
-    };
+    setRegDebugStatus('2: fields validated');
+    setIsRegistering(true);
 
     try {
+      setRegDebugStatus('3: checking ID');
+      let newCustomerId = `CUST-${Date.now().toString().slice(-6)}`;
+      let exists = true;
+      let attempts = 0;
+      while (exists && attempts < 10) {
+        try {
+          const checkSnap = await getDocFromServer(doc(db, 'customers', newCustomerId));
+          if (checkSnap.exists()) {
+            newCustomerId = `CUST-${(Date.now() + Math.floor(Math.random() * 1000)).toString().slice(-6)}`;
+            attempts++;
+          } else {
+            exists = false;
+          }
+        } catch {
+          exists = false;
+        }
+      }
+
+      setRegDebugStatus('4: saving to Firestore');
+
+      const customerFirestorePayload = {
+        id: newCustomerId,
+        customerId: newCustomerId,
+        customerCode: newCustomerId,
+        shopName,
+        ownerName,
+        contactPerson: ownerName,
+        phone: phoneVal,
+        mobileNumber: phoneVal,
+        city,
+        cityName: city,
+        address,
+        pin,
+        role: 'User',
+        status: 'PENDING',
+        isVerified: false,
+        allowedCategories: ['all'],
+        allowedSubCategories: ['all'],
+        allowedCategoryIds: ['all'],
+        allowedSubCategoryIds: ['all'],
+        isOnline: true,
+        lastActive: Date.now(),
+        createdAt: Date.now()
+      };
+
       const sanitizedCustomer = JSON.parse(JSON.stringify(customerFirestorePayload));
+
       await setDoc(doc(db, 'customers', newCustomerId), sanitizedCustomer);
-      console.log("Registration successfully written to Firestore:", newCustomerId);
+      setRegDebugStatus('5: saved OK');
+
+      const newCust: Customer = {
+        id: newCustomerId,
+        customerId: newCustomerId,
+        customerCode: newCustomerId,
+        shopName,
+        ownerName,
+        contactPerson: ownerName,
+        phone: phoneVal,
+        mobileNumber: phoneVal,
+        city,
+        cityName: city,
+        address,
+        pin,
+        role: 'User',
+        status: 'Pending',
+        isVerified: false,
+        allowedCategoryIds: ['all'],
+        allowedSubCategoryIds: ['all'],
+        isOnline: true,
+        lastActive: Date.now(),
+        createdAt: Date.now()
+      };
+
+      addCustomer(newCust);
+      setCurrentCustomer(newCust);
+      setAuthError(null);
+      setFormData(initialRegistrationFormData);
+      setShowLogin(false);
     } catch (err: any) {
-      console.error("FIRESTORE WRITE ERROR:", err);
-      alert("Network Error: Please check your internet connection and try again.");
-      return; // Do NOT proceed to pending screen if write failed!
+      const errCode = err?.code || 'UNKNOWN';
+      const errMsg = err?.message || String(err);
+      setRegDebugStatus(`ERROR: ${errCode} ${errMsg}`);
+    } finally {
+      setIsRegistering(false);
     }
-
-    const newCust: Customer = {
-      ...customerFirestorePayload,
-      status: 'Pending',
-      createdAt: Date.now()
-    };
-
-    addCustomer(newCust);
-    setCurrentCustomer(newCust);
-    setAuthError(null);
-    setFormData(initialRegistrationFormData);
-    setShowLogin(false);
   };
 
   const handleUpdateProfile = (e: React.FormEvent) => {
@@ -564,6 +605,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
   if (!currentCustomer) {
     return (
       <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased overflow-y-auto flex flex-col justify-center items-center p-4 z-[999]">
+        {regDebugStatus && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 999999, background: '#111827', color: '#ffffff', padding: '8px 16px', fontSize: '13px', fontFamily: 'monospace', textAlign: 'center', borderBottom: '1px solid #374151' }}>
+            {regDebugStatus}
+          </div>
+        )}
         <div className="w-full max-w-md bg-brand-navy-card border border-slate-700/80 rounded-2xl shadow-2xl p-6 sm:p-8 space-y-6 my-auto">
           <div className="text-center space-y-2">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-brand-gold/10 text-brand-gold border border-brand-gold/20 mb-2">
@@ -705,9 +751,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
               <button
                 type="submit"
-                className="w-full bg-brand-gold hover:bg-brand-gold/90 text-black font-black text-sm py-3.5 rounded-xl shadow-md transition-all duration-200 active:scale-[0.98] mt-2"
+                disabled={isRegistering}
+                className="w-full bg-brand-gold hover:bg-brand-gold/90 text-black font-black text-sm py-3.5 rounded-xl shadow-md transition-all duration-200 active:scale-[0.98] mt-2 disabled:opacity-50"
               >
-                Submit Registration
+                {isRegistering ? 'Submitting Registration...' : 'Submit Registration'}
               </button>
 
               <div className="text-center pt-2">
@@ -765,7 +812,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased overflow-hidden select-none pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] flex items-center justify-center">
-      
+      {regDebugStatus && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 999999, background: '#111827', color: '#ffffff', padding: '8px 16px', fontSize: '13px', fontFamily: 'monospace', textAlign: 'center', borderBottom: '1px solid #374151' }}>
+          {regDebugStatus}
+        </div>
+      )}
       {/* MOBILE SHOWROOM CONTAINER */}
       <div 
         className="relative bg-brand-navy-dark overflow-hidden flex flex-col transition-all duration-300 shadow-2xl w-full h-full"
@@ -1022,26 +1073,27 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <button 
                   disabled={cart.length === 0 || isDispatching}
                   onClick={async () => {
+                    console.log("Start: Place Order");
                     if (!currentCustomer) {
                       openProfileModal();
+                      console.log("End: Place Order");
                       return;
                     }
-                    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-                      alert("Network Error: Please check your internet connection and try again.");
-                      return;
-                    }
+
+                    setIsDispatching(true);
+
                     try {
-                      setIsDispatching(true);
                       const success = await placeOrder();
-                      setIsDispatching(false);
                       if (success) {
                         setIsCartOpen(false);
                         setOrderSuccessMsg('Order dispatched and saved to database successfully!');
                         setTimeout(() => setOrderSuccessMsg(null), 5000);
                       }
                     } catch (err: any) {
+                      console.error('Order dispatch error:', err);
+                    } finally {
                       setIsDispatching(false);
-                      alert("Network Error: Please check your internet connection and try again.");
+                      console.log("End: Place Order");
                     }
                   }}
                   className="flex-1 py-4 px-4 rounded-xl font-black text-base bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
@@ -1424,9 +1476,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black rounded-xl text-xs transition"
+                      disabled={isRegistering}
+                      className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black rounded-xl text-xs transition disabled:opacity-50"
                     >
-                      Register & Connect
+                      {isRegistering ? 'Registering...' : 'Register & Connect'}
                     </button>
                   </div>
                 </form>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDocFromServer } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAppStore } from '../store';
 import { Customer } from '../types';
@@ -33,9 +33,11 @@ export function Register() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [debugStatus, setDebugStatus] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setDebugStatus('1: button clicked');
     setErrorMsg(null);
 
     const shopName = formData.shopName.trim();
@@ -46,82 +48,113 @@ export function Register() {
     const pin = formData.pin.trim() || '1111';
 
     if (!shopName || !ownerName || !phone || !city || !address) {
+      setDebugStatus('STOPPED: Mandatory fields missing');
       setErrorMsg('Please fill in all mandatory fields.');
       return;
     }
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const msg = "Network Error: Please check your internet connection and try again.";
-      alert(msg);
-      setErrorMsg(msg);
-      return;
-    }
-
+    setDebugStatus('2: fields validated');
     setIsSubmitting(true);
 
-    // Generate a valid customer ID (e.g., CUST-XXXX)
-    const newCustomerId = `CUST-${Date.now().toString().slice(-4)}`;
-
-    const registrationData = {
-      shopName,
-      ownerName,
-      phone,
-      mobileNumber: phone,
-      city,
-      cityName: city,
-      address,
-      contactPerson: ownerName,
-      pin,
-      role: 'User',
-      allowedCategoryIds: ['all'],
-      allowedSubCategoryIds: ['all'],
-      isOnline: true,
-      lastActive: Date.now()
-    };
-
     try {
-      const payload = JSON.parse(JSON.stringify({
-        ...registrationData,
+      setDebugStatus('3: checking ID');
+      // Generate Customer ID as CUST-${Date.now().toString().slice(-6)} and verify uniqueness
+      let newCustomerId = `CUST-${Date.now().toString().slice(-6)}`;
+      let exists = true;
+      let attempts = 0;
+      while (exists && attempts < 10) {
+        try {
+          const checkSnap = await getDocFromServer(doc(db, 'customers', newCustomerId));
+          if (checkSnap.exists()) {
+            newCustomerId = `CUST-${(Date.now() + Math.floor(Math.random() * 1000)).toString().slice(-6)}`;
+            attempts++;
+          } else {
+            exists = false;
+          }
+        } catch {
+          exists = false;
+        }
+      }
+
+      setDebugStatus('4: saving to Firestore');
+
+      const registrationData = {
         id: newCustomerId,
         customerId: newCustomerId,
         customerCode: newCustomerId,
+        shopName,
+        ownerName,
+        contactPerson: ownerName,
+        phone,
+        mobileNumber: phone,
+        city,
+        cityName: city,
+        address,
+        pin,
+        role: 'User',
         status: 'PENDING',
         isVerified: false,
+        allowedCategories: ['all'],
+        allowedSubCategories: ['all'],
+        allowedCategoryIds: ['all'],
+        allowedSubCategoryIds: ['all'],
+        isOnline: true,
+        lastActive: Date.now(),
         createdAt: Date.now()
-      }));
-      // Execute direct Firestore setDoc to 'customers' collection
+      };
+
+      const payload = JSON.parse(JSON.stringify(registrationData));
+
       await setDoc(doc(db, 'customers', newCustomerId), payload);
-      console.log("Registration successfully written to Firestore:", newCustomerId);
+      setDebugStatus('5: saved OK');
+
+      const newCustomer: Customer = {
+        id: newCustomerId,
+        customerId: newCustomerId,
+        customerCode: newCustomerId,
+        shopName,
+        ownerName,
+        contactPerson: ownerName,
+        phone,
+        mobileNumber: phone,
+        city,
+        cityName: city,
+        address,
+        pin,
+        role: 'User',
+        status: 'Pending',
+        isVerified: false,
+        allowedCategoryIds: ['all'],
+        allowedSubCategoryIds: ['all'],
+        isOnline: true,
+        lastActive: Date.now(),
+        createdAt: Date.now()
+      };
+
+      addCustomer(newCustomer);
+      setCurrentCustomer(newCustomer);
+      setSuccess(true);
+
+      setTimeout(() => {
+        navigate('/');
+      }, 1500);
     } catch (err: any) {
-      console.error("FIRESTORE WRITE ERROR:", err);
-      const msg = "Network Error: Please check your internet connection and try again.";
-      alert(msg);
-      setErrorMsg(msg);
+      const errCode = err?.code || 'UNKNOWN';
+      const errMsg = err?.message || String(err);
+      setDebugStatus(`ERROR: ${errCode} ${errMsg}`);
+      setErrorMsg(err?.message || 'Registration failed');
+    } finally {
       setIsSubmitting(false);
-      return; // Do NOT proceed to pending screen if write failed!
     }
-
-    const newCustomer: Customer = {
-      id: newCustomerId,
-      customerId: newCustomerId,
-      customerCode: newCustomerId,
-      ...registrationData,
-      status: 'Pending',
-      createdAt: Date.now()
-    };
-
-    addCustomer(newCustomer);
-    setCurrentCustomer(newCustomer);
-    setSuccess(true);
-    setIsSubmitting(false);
-
-    setTimeout(() => {
-      navigate('/');
-    }, 1500);
   };
 
   return (
     <div className="min-h-screen bg-brand-navy-dark text-slate-100 flex flex-col items-center justify-center p-4">
+      {debugStatus && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 999999, background: '#111827', color: '#ffffff', padding: '8px 16px', fontSize: '13px', fontFamily: 'monospace', textAlign: 'center', borderBottom: '1px solid #374151' }}>
+          {debugStatus}
+        </div>
+      )}
       <div className="w-full max-w-md bg-brand-navy-card border border-brand-navy-border rounded-2xl shadow-2xl p-6 sm:p-8 backdrop-blur-md">
         
         {/* Header */}

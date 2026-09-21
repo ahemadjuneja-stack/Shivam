@@ -135,7 +135,11 @@ export function useFirebaseSync() {
       try {
         // 1. Real-time listener for Categories from 'categories'
         const catCol = collection(db, COLLECTIONS.CATEGORIES);
-        unsubscribeCategories = onSnapshot(catCol, (snapshot) => {
+        unsubscribeCategories = onSnapshot(catCol, { includeMetadataChanges: true }, (snapshot) => {
+          if (snapshot.metadata && snapshot.metadata.fromCache) {
+            console.log('[Firestore Sync] Skipping cached categories snapshot');
+            return;
+          }
           const fetchedCats: CategoryItem[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data() as any;
@@ -149,14 +153,23 @@ export function useFirebaseSync() {
             });
           });
           fetchedCats.sort((a, b) => (a.orderIndex ?? a.sortOrder ?? 0) - (b.orderIndex ?? b.sortOrder ?? 0));
-          useAppStore.setState({ categories: fetchedCats });
+          useAppStore.setState((state) => ({ 
+            categories: fetchedCats,
+            activeCategoryId: state.activeCategoryId && fetchedCats.some(c => c.id === state.activeCategoryId)
+              ? state.activeCategoryId
+              : (fetchedCats[0]?.id || '')
+          }));
         }, (err) => {
           handleFirestoreError(err, OperationType.GET, COLLECTIONS.CATEGORIES);
         });
 
         // 2. Real-time listener for SubCategories from 'subCategories'
         const subCatCol = collection(db, COLLECTIONS.SUBCATEGORIES);
-        unsubscribeSubCategories = onSnapshot(subCatCol, (snapshot) => {
+        unsubscribeSubCategories = onSnapshot(subCatCol, { includeMetadataChanges: true }, (snapshot) => {
+          if (snapshot.metadata && snapshot.metadata.fromCache) {
+            console.log('[Firestore Sync] Skipping cached subcategories snapshot');
+            return;
+          }
           const fetchedSubs: SubCategory[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data() as any;
@@ -172,14 +185,23 @@ export function useFirebaseSync() {
             });
           });
           fetchedSubs.sort((a, b) => (a.orderIndex ?? a.sortOrder ?? 0) - (b.orderIndex ?? b.sortOrder ?? 0));
-          useAppStore.setState({ subCategories: fetchedSubs });
+          useAppStore.setState((state) => ({
+            subCategories: fetchedSubs,
+            activeSubCategoryId: state.activeSubCategoryId && fetchedSubs.some(s => s.id === state.activeSubCategoryId)
+              ? state.activeSubCategoryId
+              : (fetchedSubs.find(s => s.categoryId === state.activeCategoryId)?.id || fetchedSubs[0]?.id || '')
+          }));
         }, (err) => {
           handleFirestoreError(err, OperationType.GET, COLLECTIONS.SUBCATEGORIES);
         });
 
         // 3. Real-time listener for Products/Photos from 'photos'
         const photosCol = collection(db, COLLECTIONS.PHOTOS);
-        unsubscribePhotos = onSnapshot(photosCol, (snapshot) => {
+        unsubscribePhotos = onSnapshot(photosCol, { includeMetadataChanges: true }, (snapshot) => {
+          if (snapshot.metadata && snapshot.metadata.fromCache) {
+            console.log('[Firestore Sync] Skipping cached photos snapshot');
+            return;
+          }
           photosCollectionMap.clear();
           snapshot.forEach((doc) => {
             const photo = normalizePhoto(doc);
@@ -195,7 +217,10 @@ export function useFirebaseSync() {
         // 4. Real-time listener for Products/Photos from 'catalog_photos' (fallback collection)
         try {
           const catalogPhotosCol = collection(db, COLLECTIONS.CATALOG_PHOTOS);
-          unsubscribeCatalogPhotos = onSnapshot(catalogPhotosCol, (snapshot) => {
+          unsubscribeCatalogPhotos = onSnapshot(catalogPhotosCol, { includeMetadataChanges: true }, (snapshot) => {
+            if (snapshot.metadata && snapshot.metadata.fromCache) {
+              return;
+            }
             catalogPhotosCollectionMap.clear();
             snapshot.forEach((doc) => {
               const photo = normalizePhoto(doc);
@@ -213,7 +238,10 @@ export function useFirebaseSync() {
 
         // 5. Real-time listener for Showroom Videos from 'showroomVideos'
         const showroomVideosCol = collection(db, COLLECTIONS.SHOWROOM_VIDEOS);
-        unsubscribeShowroomVideos = onSnapshot(showroomVideosCol, (snapshot) => {
+        unsubscribeShowroomVideos = onSnapshot(showroomVideosCol, { includeMetadataChanges: true }, (snapshot) => {
+          if (snapshot.metadata && snapshot.metadata.fromCache) {
+            return;
+          }
           const fetchedVideos: ShowroomVideo[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data() as any;
@@ -237,7 +265,10 @@ export function useFirebaseSync() {
 
         // 6. Real-time listener for Wholesale Orders from 'orders'
         const ordersCol = collection(db, COLLECTIONS.ORDERS);
-        unsubscribeOrders = onSnapshot(ordersCol, (snapshot) => {
+        unsubscribeOrders = onSnapshot(ordersCol, { includeMetadataChanges: true }, (snapshot) => {
+          if (snapshot.metadata && snapshot.metadata.fromCache) {
+            return;
+          }
           const fetchedOrders: WholesaleOrder[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data() as any;
@@ -293,7 +324,10 @@ export function useFirebaseSync() {
 
         // 7. Real-time listener for Customers from 'customers'
         const customersCol = collection(db, COLLECTIONS.CUSTOMERS);
-        unsubscribeCustomers = onSnapshot(customersCol, (snapshot) => {
+        unsubscribeCustomers = onSnapshot(customersCol, { includeMetadataChanges: true }, (snapshot) => {
+          if (snapshot.metadata && snapshot.metadata.fromCache) {
+            return;
+          }
           if (!snapshot.empty) {
             const fetchedCust: Customer[] = [];
             snapshot.forEach((doc) => {
@@ -340,7 +374,10 @@ export function useFirebaseSync() {
 
         // 8. Real-time listener for Community Posts from 'community_posts'
         const communityCol = collection(db, COLLECTIONS.COMMUNITY_POSTS);
-        unsubscribeCommunityPosts = onSnapshot(communityCol, (snapshot) => {
+        unsubscribeCommunityPosts = onSnapshot(communityCol, { includeMetadataChanges: true }, (snapshot) => {
+          if (snapshot.metadata && snapshot.metadata.fromCache) {
+            return;
+          }
           const fetchedPosts: CommunityPost[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data() as any;
@@ -369,7 +406,10 @@ export function useFirebaseSync() {
 
         // 9. Real-time listener for Chat Messages from 'chat_messages'
         const messagesCol = collection(db, COLLECTIONS.MESSAGES);
-        unsubscribeMessages = onSnapshot(messagesCol, (snapshot) => {
+        unsubscribeMessages = onSnapshot(messagesCol, { includeMetadataChanges: true }, (snapshot) => {
+          if (snapshot.metadata && snapshot.metadata.fromCache) {
+            return;
+          }
           chatMessagesMap.clear();
           snapshot.forEach((doc) => {
             const msg = normalizeMessage(doc);
@@ -384,7 +424,10 @@ export function useFirebaseSync() {
         // 10. Real-time listener for alternate 'messages' collection
         try {
           const altMessagesCol = collection(db, 'messages');
-          unsubscribeAltMessages = onSnapshot(altMessagesCol, (snapshot) => {
+          unsubscribeAltMessages = onSnapshot(altMessagesCol, { includeMetadataChanges: true }, (snapshot) => {
+            if (snapshot.metadata && snapshot.metadata.fromCache) {
+              return;
+            }
             altMessagesMap.clear();
             snapshot.forEach((doc) => {
               const msg = normalizeMessage(doc);
@@ -400,7 +443,10 @@ export function useFirebaseSync() {
         // 11. Real-time listener for 'broadcast_messages' collection
         try {
           const broadcastCol = collection(db, COLLECTIONS.BROADCAST_MESSAGES);
-          unsubscribeBroadcasts = onSnapshot(broadcastCol, (snapshot) => {
+          unsubscribeBroadcasts = onSnapshot(broadcastCol, { includeMetadataChanges: true }, (snapshot) => {
+            if (snapshot.metadata && snapshot.metadata.fromCache) {
+              return;
+            }
             const fetchedBroadcasts: any[] = [];
             snapshot.forEach((doc) => {
               const data = doc.data() as any;

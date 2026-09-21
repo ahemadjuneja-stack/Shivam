@@ -212,30 +212,37 @@ export function Home() {
         {/* RIGHT/BOTTOM: CATEGORY GRID */}
         <div className="flex-1 w-full landscape:w-[35%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-3 sm:p-4 shadow-2xl overflow-y-auto scroll-smooth scrollbar-thin">
           <div className="flex flex-col gap-4 pb-4">
-            {categories.map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => handleSelectCategory(cat.id)}
-                className="group w-full flex flex-col gap-3 p-3 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-all duration-200 hover:scale-[1.01] active:scale-[0.98] text-center shadow-lg focus:outline-none"
-              >
-                <div className="w-full aspect-[16/10] sm:aspect-video rounded-xl overflow-hidden bg-black border-2 border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center">
-                  <img
-                    src={cat.thumbnailUrl}
-                    alt={cat.displayName}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                </div>
-                <div className="flex items-center justify-center gap-2 py-1.5 flex-shrink-0">
-                  <span 
-                    className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full shadow" 
-                    style={{ backgroundColor: cat.accentColorHex }} 
-                  />
-                  <span className="text-sm sm:text-base font-black text-slate-200 group-hover:text-brand-gold tracking-wide truncate">
-                    {cat.displayName}
-                  </span>
-                </div>
-              </button>
-            ))}
+            {categories.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-3">
+                <div className="w-7 h-7 border-2 border-brand-gold border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-semibold text-slate-400">Loading categories...</span>
+              </div>
+            ) : (
+              categories.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => handleSelectCategory(cat.id)}
+                  className="group w-full flex flex-col gap-3 p-3 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-all duration-200 hover:scale-[1.01] active:scale-[0.98] text-center shadow-lg focus:outline-none"
+                >
+                  <div className="w-full aspect-[16/10] sm:aspect-video rounded-xl overflow-hidden bg-black border-2 border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center">
+                    <img
+                      src={cat.thumbnailUrl}
+                      alt={cat.displayName}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  </div>
+                  <div className="flex items-center justify-center gap-2 py-1.5 flex-shrink-0">
+                    <span 
+                      className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full shadow" 
+                      style={{ backgroundColor: cat.accentColorHex }} 
+                    />
+                    <span className="text-sm sm:text-base font-black text-slate-200 group-hover:text-brand-gold tracking-wide truncate">
+                      {cat.displayName}
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
           </div>
         </div>
 
@@ -280,27 +287,34 @@ export function Home() {
         {/* Subcategories Grid: Sirf Thumbnail aur uske Niche Subcategory ka Naam */}
         <div className="flex-1 p-4 overflow-y-auto scrollbar-thin">
           <div className="grid grid-cols-2 sm:grid-cols-3 landscape:grid-cols-4 gap-4 max-w-6xl mx-auto">
-            {categorySubList.map((sub) => (
-              <button
-                key={sub.id}
-                onClick={() => handleSelectSubCategory(sub.id)}
-                className="group flex flex-col gap-2 transition-all duration-200 hover:scale-[1.02] active:scale-95 text-center focus:outline-none"
-              >
-                {/* 1. Strict 16:9 Thumbnail Image (Pure image, no text/folder icons over it) */}
-                <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg">
-                  <img
-                    src={sub.thumbnailUrl}
-                    alt={sub.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                </div>
+            {categorySubList.length === 0 ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-16 text-slate-500 gap-3">
+                <div className="w-7 h-7 border-2 border-brand-gold border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-semibold text-slate-400">Loading subcategories...</span>
+              </div>
+            ) : (
+              categorySubList.map((sub) => (
+                <button
+                  key={sub.id}
+                  onClick={() => handleSelectSubCategory(sub.id)}
+                  className="group flex flex-col gap-2 transition-all duration-200 hover:scale-[1.02] active:scale-95 text-center focus:outline-none"
+                >
+                  {/* 1. Strict 16:9 Thumbnail Image (Pure image, no text/folder icons over it) */}
+                  <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg">
+                    <img
+                      src={sub.thumbnailUrl}
+                      alt={sub.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  </div>
 
-                {/* 2. Uske Niche Subcategory ka Naam */}
-                <span className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-brand-gold tracking-wide truncate px-1">
-                  {sub.name}
-                </span>
-              </button>
-            ))}
+                  {/* 2. Uske Niche Subcategory ka Naam */}
+                  <span className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-brand-gold tracking-wide truncate px-1">
+                    {sub.name}
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         </div>
 
@@ -338,33 +352,40 @@ export function Home() {
         {/* Gallery Grid (Strict 16:9 HDTV Thumbnails, ZERO ABCD badges on top!) */}
         <div className="flex-1 p-3 overflow-y-auto scrollbar-thin">
           <div className="grid grid-cols-2 sm:grid-cols-3 landscape:grid-cols-4 gap-3 max-w-6xl mx-auto">
-            {galleryPhotos.map((photo) => {
-              const orderedItems = cart.filter(c => c.photoId === photo.id);
-              const totalPiecesOrdered = orderedItems.reduce((sum, item) => sum + item.quantity, 0);
+            {galleryPhotos.length === 0 ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-16 text-slate-500 gap-3">
+                <div className="w-7 h-7 border-2 border-brand-gold border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-semibold text-slate-400">Loading products...</span>
+              </div>
+            ) : (
+              galleryPhotos.map((photo) => {
+                const orderedItems = cart.filter(c => c.photoId === photo.id);
+                const totalPiecesOrdered = orderedItems.reduce((sum, item) => sum + item.quantity, 0);
 
-              return (
-                <div
-                  key={photo.id}
-                  onClick={() => handleOpenFullImage(photo)}
-                  className="group relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-brand-gold cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 shadow-lg flex items-center justify-center"
-                >
-                  {/* Clean 16:9 Photo without any ABCD overlay or item number */}
-                  <img
-                    src={photo.imageUri}
-                    alt={photo.photoCode}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
+                return (
+                  <div
+                    key={photo.id}
+                    onClick={() => handleOpenFullImage(photo)}
+                    className="group relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-brand-gold cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 shadow-lg flex items-center justify-center"
+                  >
+                    {/* Clean 16:9 Photo without any ABCD overlay or item number */}
+                    <img
+                      src={photo.imageUri}
+                      alt={photo.photoCode}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
 
-                  {/* Ordered Badge if already in cart */}
-                  {totalPiecesOrdered > 0 && (
-                    <div className="absolute top-2 right-2 bg-emerald-500 text-black text-[10px] font-black px-1.5 py-0.5 rounded shadow flex items-center gap-1">
-                      <Check size={10} />
-                      <span>{totalPiecesOrdered} pcs</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    {/* Ordered Badge if already in cart */}
+                    {totalPiecesOrdered > 0 && (
+                      <div className="absolute top-2 right-2 bg-emerald-500 text-black text-[10px] font-black px-1.5 py-0.5 rounded shadow flex items-center gap-1">
+                        <Check size={10} />
+                        <span>{totalPiecesOrdered} pcs</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 

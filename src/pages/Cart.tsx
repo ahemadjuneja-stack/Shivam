@@ -13,25 +13,26 @@ export function Cart() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handlePlaceOrder = async () => {
+    console.log("Start: Place Order");
     if (!currentCustomer) {
       alert('Please login as a customer shop first!');
+      console.log("End: Place Order");
       return;
     }
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      alert("Network Error: Please check your internet connection and try again.");
-      return;
-    }
+    
     setIsSubmitting(true);
+
     try {
       const success = await placeOrder();
-      setIsSubmitting(false);
       if (success) {
         alert('Order placed and synced to Firestore successfully!');
         navigate('/');
       }
     } catch (err: any) {
+      console.error('Order submission error:', err);
+    } finally {
       setIsSubmitting(false);
-      alert("Network Error: Please check your internet connection and try again.");
+      console.log("End: Place Order");
     }
   };
 

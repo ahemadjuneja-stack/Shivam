@@ -1,4 +1,4 @@
-import { initializeApp, getApps } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   initializeFirestore,
   memoryLocalCache,
@@ -24,13 +24,12 @@ import { CatalogPhoto, WholesaleOrder, Customer, ChatMessage, CommunityPost, Cat
 import { generateOrderId } from './lib/idGenerator';
 
 // Initialize Firebase App
-export const firebaseApp = getApps().length === 0 
-  ? initializeApp(firebaseConfig) 
-  : getApps()[0];
+export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+export const firebaseApp = app;
 
 // Storage bucket instance
 export const storage = typeof window !== 'undefined' 
-  ? getStorage(firebaseApp, "gs://shivam-2bace.firebasestorage.app") 
+  ? getStorage(app, "gs://shivam-2bace.firebasestorage.app") 
   : null;
 
 export type MediaFolder = 'catalog' | 'voice_notes' | 'communication' | 'cart_attachments' | 'staff_uploads';
@@ -89,15 +88,16 @@ export async function uploadMediaToStorage(
     return await getDownloadURL(snapshot.ref);
   };
 
+  // Strict 3-second timeout guard to prevent UI freezes
   const timeoutPromise = new Promise<string>((_, reject) => {
-    setTimeout(() => reject(new Error('Cloud Storage upload timed out after 5s')), 5000);
+    setTimeout(() => reject(new Error('Cloud Storage upload timed out after 3s')), 3000);
   });
 
   try {
     const downloadUrl = await Promise.race([uploadTask(), timeoutPromise]);
     return downloadUrl;
   } catch (uploadErr) {
-    console.warn('[Storage] Upload failed or timed out:', uploadErr);
+    console.warn('[Storage] Upload failed or timed out (max 3s), continuing with fallback:', uploadErr);
     return '';
   }
 }
@@ -105,10 +105,10 @@ export async function uploadMediaToStorage(
 // Custom Database ID
 export const FIRESTORE_DATABASE_ID = "ai-studio-shivam-6138ca5c-1e3b-412f-957d-d52501eff503";
 
-// Initialize Firestore with specific database ID, memory-only cache (NO persistent IndexedDB), and long-polling transport
-export const db = initializeFirestore(firebaseApp, {
-  localCache: memoryLocalCache(), // Pure memory only, NO persistent offline IndexedDB
-  experimentalForceLongPolling: true
+// Connect explicitly to named database instance with memory local cache and auto-detecting transport
+export const db = initializeFirestore(app, {
+  localCache: memoryLocalCache(),
+  experimentalAutoDetectLongPolling: true
 }, FIRESTORE_DATABASE_ID);
 
 // Clean up any stale IndexedDB offline queues from previous persistent sessions
@@ -189,8 +189,15 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   
   if (errorMessage.includes('Quota limit exceeded') || errorMessage.includes('quota')) {
     console.warn(`[Firebase Quota Exceeded] Unable to sync '${path}'. The daily free read limit has been reached. Please upgrade to the Blaze plan or wait for the daily reset.`);
-  } else if (errorMessage.includes('RST_STREAM') || errorMessage.includes('Code: 13') || errorMessage.includes('INTERNAL: Received RST_STREAM')) {
-    console.warn(`[Firestore Stream Notice] Temporary stream reset for '${path}'. Auto-reconnecting...`);
+  } else if (
+    errorMessage.includes('RST_STREAM') || 
+    errorMessage.includes('Code: 13') || 
+    errorMessage.includes('INTERNAL: Received RST_STREAM') ||
+    errorMessage.includes('unavailable') ||
+    errorMessage.includes('Could not reach Cloud Firestore backend') ||
+    errorMessage.includes('offline')
+  ) {
+    console.warn(`[Firestore Connection Notice] Temporary network interruption for '${path}'. Auto-reconnecting...`);
   } else {
     console.error('Firestore Error:', JSON.stringify(errInfo));
   }

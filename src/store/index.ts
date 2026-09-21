@@ -34,7 +34,7 @@ import {
   db
 } from '../firebase';
 import { uploadMediaToStorage } from '../services/storageService';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { generateOrderId } from '../lib/idGenerator';
 
 interface AppState {
@@ -104,51 +104,14 @@ interface AppState {
   resetToDefaults: () => void;
 }
 
-export const defaultCategories: CategoryItem[] = [
-  { 
-    id: MainCategory.COSMETICS, 
-    displayName: 'Cosmetics', 
-    thumbnailUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&q=80&w=600', 
-    accentColorHex: '#EC4899', 
-    sortOrder: 1 
-  },
-  { 
-    id: MainCategory.IMITATION, 
-    displayName: 'Imitation Jewelry', 
-    thumbnailUrl: 'https://images.unsplash.com/photo-1599643478514-4a410f0a82ef?auto=format&fit=crop&q=80&w=600', 
-    accentColorHex: '#F59E0B', 
-    sortOrder: 2 
-  },
-  { 
-    id: MainCategory.HAIR_ACCESSORIES, 
-    displayName: 'Hair Accessories', 
-    thumbnailUrl: 'https://images.unsplash.com/photo-1606214532675-80277bd28bd9?auto=format&fit=crop&q=80&w=600', 
-    accentColorHex: '#38BDF8', 
-    sortOrder: 3 
-  }
-];
-
-export const defaultSubCategories: SubCategory[] = [
-  // Imitation
-  { id: 'sub-earrings', categoryId: MainCategory.IMITATION, name: 'Earrings & Jhumkas', iconName: 'sparkles', thumbnailUrl: 'https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&q=80&w=600', photoCount: 3, sortOrder: 1 },
-  { id: 'sub-bangles', categoryId: MainCategory.IMITATION, name: 'Bangles & Kadas', iconName: 'circle', thumbnailUrl: 'https://images.unsplash.com/photo-1611591475806-03f13f1737be?auto=format&fit=crop&q=80&w=600', photoCount: 2, sortOrder: 2 },
-  { id: 'sub-necklaces', categoryId: MainCategory.IMITATION, name: 'Choker & Necklace Sets', iconName: 'gem', thumbnailUrl: 'https://images.unsplash.com/photo-1599643478514-4a410f0a82ef?auto=format&fit=crop&q=80&w=600', photoCount: 1, sortOrder: 3 },
-  
-  // Cosmetics
-  { id: 'sub-lipsticks', categoryId: MainCategory.COSMETICS, name: 'Matte & Liquid Lipsticks', iconName: 'heart', thumbnailUrl: 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&q=80&w=600', photoCount: 2, sortOrder: 1 },
-  { id: 'sub-nailpolish', categoryId: MainCategory.COSMETICS, name: 'Nail Lacquer & Gel Polish', iconName: 'sparkles', thumbnailUrl: 'https://images.unsplash.com/photo-1632345031435-8727f6897d53?auto=format&fit=crop&q=80&w=600', photoCount: 1, sortOrder: 2 },
-  { id: 'sub-eyemakeup', categoryId: MainCategory.COSMETICS, name: 'Kajal & Liquid Liner', iconName: 'eye', thumbnailUrl: 'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&q=80&w=600', photoCount: 1, sortOrder: 3 },
-
-  // Hair Accessories
-  { id: 'sub-clawclips', categoryId: MainCategory.HAIR_ACCESSORIES, name: 'Korean Claw Clips', iconName: 'scissors', thumbnailUrl: 'https://images.unsplash.com/photo-1606214532675-80277bd28bd9?auto=format&fit=crop&q=80&w=600', photoCount: 2, sortOrder: 1 },
-  { id: 'sub-scrunchies', categoryId: MainCategory.HAIR_ACCESSORIES, name: 'Silk Scrunchies & Bands', iconName: 'circle-dot', thumbnailUrl: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&q=80&w=600', photoCount: 1, sortOrder: 2 }
-];
+export const defaultCategories: CategoryItem[] = [];
+export const defaultSubCategories: SubCategory[] = [];
 
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      categories: defaultCategories,
-      subCategories: defaultSubCategories,
+      categories: [],
+      subCategories: [],
       photos: [],
       showroomVideos: [],
       customers: [],
@@ -157,8 +120,8 @@ export const useAppStore = create<AppState>()(
       broadcastMessages: [],
       communityPosts: [],
       
-      activeCategoryId: MainCategory.IMITATION,
-      activeSubCategoryId: 'sub-earrings',
+      activeCategoryId: '',
+      activeSubCategoryId: '',
       activePhotoId: '',
       showroomScreenMode: 'home',
 
@@ -348,11 +311,6 @@ export const useAppStore = create<AppState>()(
           alert("Your order slip is empty. Please add items from the showroom.");
           return false;
         }
-
-        if (typeof navigator !== 'undefined' && !navigator.onLine) {
-          alert("Network Error: Please check your internet connection and try again.");
-          return false;
-        }
         
         const hasImitation = state.cart.some(item => item.categoryId === MainCategory.IMITATION);
         const hasCosmetics = state.cart.some(item => item.categoryId === MainCategory.COSMETICS);
@@ -361,19 +319,27 @@ export const useAppStore = create<AppState>()(
         const orderIdNumber = generateOrderId();
         const custId = state.currentCustomer.customerId || state.currentCustomer.customerCode || 'CUST-GUEST';
 
-        // Upload voice note asynchronously directly to Cloud Storage with strict timeout
-        let uploadedVoiceUrl: string = '';
-        if (state.orderVoiceNote) {
-          try {
-            uploadedVoiceUrl = await uploadMediaToStorage(
-              state.orderVoiceNote, 
-              'voice_notes', 
-              `order_voice_${orderIdNumber}`
-            );
-          } catch (audioErr) {
-            console.warn('Voice note upload skipped or timed out, continuing order write immediately:', audioErr);
-            uploadedVoiceUrl = '';
-          }
+        // Detached background voice upload if exists - never blocks order submission
+        const voiceNoteToUpload = state.orderVoiceNote;
+        if (voiceNoteToUpload) {
+          uploadMediaToStorage(voiceNoteToUpload, 'voice_notes', `order_voice_${orderIdNumber}`)
+            .then(async (url) => {
+              if (url) {
+                try {
+                  const targetOrderRef = doc(db, 'orders', orderIdNumber);
+                  await updateDoc(targetOrderRef, {
+                    voiceNoteUrl: url,
+                    voiceUrl: url,
+                    audioUrl: url,
+                    voiceNoteUri: url
+                  });
+                  console.log('Background voice note attached successfully to order:', orderIdNumber);
+                } catch (updateErr) {
+                  console.warn('Non-blocking voice note attachment notice:', updateErr);
+                }
+              }
+            })
+            .catch((err) => console.warn('Background voice note upload catch:', err));
         }
 
         const standardizedItems = state.cart.map(item => {
@@ -423,10 +389,10 @@ export const useAppStore = create<AppState>()(
           totalAmount: 0,
           orderNote: state.orderNote || '',
           notes: state.orderNote || '',
-          voiceNoteUrl: uploadedVoiceUrl || '',
-          voiceUrl: uploadedVoiceUrl || '',
-          audioUrl: uploadedVoiceUrl || '',
-          voiceNoteUri: uploadedVoiceUrl || '',
+          voiceNoteUrl: '',
+          voiceUrl: '',
+          audioUrl: '',
+          voiceNoteUri: '',
           status: 'Pending',
           overallStatus: 'RECEIVED',
           imitationStatus: hasImitation ? 'PENDING' : 'NOT_APPLICABLE',
@@ -436,10 +402,11 @@ export const useAppStore = create<AppState>()(
         };
 
         try {
-          console.log("SENDING ORDER TO FIRESTORE:", newOrder);
+          console.log("SENDING ORDER DIRECTLY TO FIRESTORE:", newOrder);
           // Strip any unexpected undefined values to ensure Firestore compliance
           const sanitizedPayload = JSON.parse(JSON.stringify(newOrder));
           const orderRef = doc(db, 'orders', orderIdNumber);
+
           await setDoc(orderRef, sanitizedPayload);
           console.log('Order successfully written directly to Firestore orders:', orderIdNumber);
 
@@ -453,8 +420,8 @@ export const useAppStore = create<AppState>()(
           return true;
         } catch (error: any) {
           console.error("FIRESTORE ORDER WRITE ERROR:", error);
-          alert("Network Error: Please check your internet connection and try again.");
-          return false;
+          window.alert("Order Dispatch Error: " + (error?.message || String(error)));
+          throw error;
         }
       },
 
@@ -670,27 +637,24 @@ export const useAppStore = create<AppState>()(
 
       resetToDefaults: () => {
         set({
-          categories: defaultCategories,
-          subCategories: defaultSubCategories,
+          categories: [],
+          subCategories: [],
           photos: [],
           showroomVideos: [],
           communityPosts: [],
-          activeCategoryId: MainCategory.IMITATION,
-          activeSubCategoryId: 'sub-earrings',
+          activeCategoryId: '',
+          activeSubCategoryId: '',
           activePhotoId: ''
         });
       }
     }),
     {
-      name: 'shivam-wholesale-clean-v8',
-      version: 8,
+      name: 'shivam-wholesale-session-v9',
+      version: 9,
       partialize: (state) => ({
         currentCustomer: state.currentCustomer,
         cart: state.cart,
-        orderNote: state.orderNote,
-        activeCategoryId: state.activeCategoryId,
-        activeSubCategoryId: state.activeSubCategoryId,
-        showroomScreenMode: state.showroomScreenMode
+        orderNote: state.orderNote
       })
     }
   )

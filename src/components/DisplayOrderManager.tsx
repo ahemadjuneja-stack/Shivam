@@ -12,7 +12,7 @@ export function DisplayOrderManager() {
   const reorderPhotos = useAppStore(state => state.reorderPhotos);
 
   const [activeTab, setActiveTab] = useState<'categories' | 'subcategories' | 'products'>('subcategories');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('imitation');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(categories[0]?.id || '');
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<string>('');
   const [savedNotice, setSavedNotice] = useState(false);
 
@@ -175,9 +175,9 @@ export function DisplayOrderManager() {
                   onChange={(e) => setSelectedCategoryId(e.target.value)}
                   className="bg-slate-900 border border-slate-800 rounded-lg text-xs text-white px-3 py-1.5 font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
                 >
-                  <option value="imitation">Imitation Jewelry</option>
-                  <option value="cosmetics">Cosmetics</option>
-                  <option value="hair_accessories">Hair Accessories</option>
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.displayName}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -268,9 +268,9 @@ export function DisplayOrderManager() {
                   }}
                   className="bg-slate-900 border border-slate-800 rounded-lg text-xs text-white px-3 py-1.5 font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
                 >
-                  <option value="imitation">Imitation Jewelry</option>
-                  <option value="cosmetics">Cosmetics</option>
-                  <option value="hair_accessories">Hair Accessories</option>
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.displayName}</option>
+                  ))}
                 </select>
 
                 <select
