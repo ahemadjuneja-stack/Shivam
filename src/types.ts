@@ -66,29 +66,30 @@ export interface ProductVariant {
 }
 
 export function getPhotoVariants(photo: CatalogPhoto): ProductVariant[] {
+  const parseQty = (val: any): number | undefined => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const num = Number(val);
+    return !isNaN(num) && num >= 0 ? num : undefined;
+  };
+
   // 1. If photo.variants is an array of objects
   if (Array.isArray(photo.variants) && photo.variants.length > 0) {
     return photo.variants.map((v: any, index: number) => {
       const keys = ['A', 'B', 'C', 'D'];
       const defaultKey = keys[index] || `V${index + 1}`;
 
-      // Check variant-specific min/default quantity fields
-      let vQty: number | undefined = undefined;
-      if (typeof v.defaultQuantity === 'number' && v.defaultQuantity >= 0) {
-        vQty = v.defaultQuantity;
-      } else if (typeof v.minQty === 'number' && v.minQty >= 0) {
-        vQty = v.minQty;
-      } else if (typeof v.min === 'number' && v.min >= 0) {
-        vQty = v.min;
-      } else if (typeof v.minimumQuantity === 'number' && v.minimumQuantity >= 0) {
-        vQty = v.minimumQuantity;
-      } else if (typeof v.qty === 'number' && v.qty >= 0) {
-        vQty = v.qty;
-      } else if (typeof v.packSize === 'number' && v.packSize >= 0) {
-        vQty = v.packSize;
-      }
+      // Check variant-specific min/default quantity fields in specified order:
+      // minQuantity, defaultQuantity, minQty, min, minimumQuantity, qty, quantity, packSize
+      let vQty = parseQty(v.minQuantity);
+      if (vQty === undefined) vQty = parseQty(v.defaultQuantity);
+      if (vQty === undefined) vQty = parseQty(v.minQty);
+      if (vQty === undefined) vQty = parseQty(v.min);
+      if (vQty === undefined) vQty = parseQty(v.minimumQuantity);
+      if (vQty === undefined) vQty = parseQty(v.qty);
+      if (vQty === undefined) vQty = parseQty(v.quantity);
+      if (vQty === undefined) vQty = parseQty(v.packSize);
 
-      const finalQty = vQty !== undefined ? vQty : 6;
+      const finalQty = vQty !== undefined ? vQty : 1;
 
       let vAvail = true;
       if (v.isAvailable !== undefined) {
@@ -113,9 +114,8 @@ export function getPhotoVariants(photo: CatalogPhoto): ProductVariant[] {
   }
 
   // 2. Generate from standard properties (A, B, C, D)
-  const baseDefaultQty = typeof photo.defaultQuantity === 'number' && photo.defaultQuantity > 0 
-    ? photo.defaultQuantity 
-    : 6;
+  const parsedBaseQty = parseQty(photo.defaultQuantity);
+  const baseDefaultQty = parsedBaseQty !== undefined && parsedBaseQty > 0 ? parsedBaseQty : 1;
 
   const variantsList: ProductVariant[] = [];
   const count = typeof photo.itemCount === 'number' && photo.itemCount > 0 ? photo.itemCount : 4;
@@ -127,10 +127,8 @@ export function getPhotoVariants(photo: CatalogPhoto): ProductVariant[] {
     const labelKey = `${opt.toLowerCase()}Label` as keyof CatalogPhoto;
     const qtyKey = `${opt.toLowerCase()}DefaultQuantity` as keyof CatalogPhoto;
 
-    const qtyVal = photo[qtyKey] as number | undefined;
-    const defaultQuantity = typeof qtyVal === 'number' && qtyVal >= 0 
-      ? qtyVal 
-      : baseDefaultQty;
+    const qtyVal = parseQty(photo[qtyKey]);
+    const defaultQuantity = qtyVal !== undefined ? qtyVal : baseDefaultQty;
 
     const isAvailable = photo[isAvailKey] !== undefined 
       ? !!photo[isAvailKey] 

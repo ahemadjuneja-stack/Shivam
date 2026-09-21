@@ -120,7 +120,7 @@ export function useFirebaseSync() {
         bAvailable: data.bAvailable !== undefined ? data.bAvailable : (data.b !== undefined ? data.b : true),
         cAvailable: data.cAvailable !== undefined ? data.cAvailable : (data.c !== undefined ? data.c : true),
         dAvailable: data.dAvailable !== undefined ? data.dAvailable : (data.d !== undefined ? data.d : true),
-        defaultQuantity: typeof data.defaultQuantity === 'number' ? data.defaultQuantity : 6,
+        defaultQuantity: typeof data.defaultQuantity === 'number' ? data.defaultQuantity : 1,
         sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0,
         orderIndex: typeof data.orderIndex === 'number' ? data.orderIndex : (typeof data.sortOrder === 'number' ? data.sortOrder : 0),
         description: data.description || '',

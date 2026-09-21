@@ -74,7 +74,7 @@ export function Cart() {
               <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl overflow-hidden p-0.5">
                 <button 
                   onClick={() => {
-                    const minQty = item.defaultQuantity || 6;
+                    const minQty = item.defaultQuantity || 1;
                     const target = item.quantity <= minQty ? 0 : item.quantity - minQty;
                     updateCartItemQuantity(idx, target);
                   }}
@@ -89,7 +89,7 @@ export function Cart() {
                 </div>
                 <button 
                   onClick={() => {
-                    const minQty = item.defaultQuantity || 6;
+                    const minQty = item.defaultQuantity || 1;
                     const target = item.quantity + minQty;
                     updateCartItemQuantity(idx, target);
                   }}

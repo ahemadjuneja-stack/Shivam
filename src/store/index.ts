@@ -188,19 +188,18 @@ export const useAppStore = create<AppState>()(
       setIsCartOpen: (open) => set({ isCartOpen: open }),
 
       addToCart: (item) => set((state) => {
-        const targetPhotoCode = item.photoCode || (item as any).code || 'SKU';
-        const targetOption = item.optionLetter || item.variant || 'A';
-        const targetId = item.id || `${item.photoId || targetPhotoCode}_${targetOption}`;
+        const photoId = item.photoId || (item.id ? item.id.split('_')[0] : '') || item.photoCode || 'SKU';
+        const optionLetter = item.optionLetter || item.variant || 'A';
+        const photoCode = item.photoCode || (item.name ? item.name.split(' ')[0] : 'SKU');
+        const targetId = `${photoId}_${optionLetter}`;
 
         const existingIdx = state.cart.findIndex(i => {
-          if (item.photoId && i.photoId && i.photoId === item.photoId && (i.optionLetter || 'A') === targetOption) return true;
-          if (i.id && targetId && i.id === targetId) return true;
-          if (i.photoCode && targetPhotoCode && i.photoCode === targetPhotoCode && (i.optionLetter || 'A') === targetOption) return true;
-          if ((i.photoCode || i.id) === (item.photoCode || item.id)) return true;
-          return false;
+          const iPhotoId = i.photoId || (i.id ? i.id.split('_')[0] : '') || i.photoCode;
+          const iOption = i.optionLetter || i.variant || 'A';
+          return (iPhotoId === photoId || i.photoCode === photoCode) && iOption === optionLetter;
         });
 
-        const addedQty = Number(item.quantity || 1);
+        const addedQty = Number(item.quantity || item.defaultQuantity || 1);
 
         if (existingIdx > -1) {
           const updated = [...state.cart];
@@ -220,10 +219,13 @@ export const useAppStore = create<AppState>()(
           if (addedQty <= 0) return state;
           const newItem: OrderCartItem = {
             ...item,
+            photoId,
+            photoCode,
+            optionLetter,
+            variant: optionLetter,
             id: targetId,
-            photoCode: targetPhotoCode,
-            optionLetter: targetOption,
             quantity: Math.max(1, addedQty),
+            defaultQuantity: item.defaultQuantity || 1,
             imageUri: item.imageUri || (item as any).imageUrl || '',
             imageUrl: item.imageUrl || item.imageUri || ''
           };
@@ -231,14 +233,17 @@ export const useAppStore = create<AppState>()(
         }
       }),
       setItemQuantity: (photo, optionLetter, quantity) => set((state) => {
-        const targetPhotoCode = photo.photoCode || (photo as any).code || 'SKU';
-        const targetId = `${photo.id}_${optionLetter}`;
+        const pObj = photo as any;
+        const photoId = pObj.photoId || pObj.id || '';
+        const photoCode = pObj.photoCode || pObj.code || 'SKU';
+        const optLetter = optionLetter || pObj.optionLetter || pObj.variant || 'A';
+        const targetId = `${photoId}_${optLetter}`;
 
-        const existingIdx = state.cart.findIndex(i => 
-          (i.photoId === photo.id && (i.optionLetter || 'A') === optionLetter) ||
-          (i.photoCode === targetPhotoCode && (i.optionLetter || 'A') === optionLetter) ||
-          i.id === targetId
-        );
+        const existingIdx = state.cart.findIndex(i => {
+          const iPhotoId = i.photoId || (i.id ? i.id.split('_')[0] : '') || i.photoCode;
+          const iOption = i.optionLetter || i.variant || 'A';
+          return (iPhotoId === photoId || i.photoCode === photoCode) && iOption === optLetter;
+        });
 
         if (quantity <= 0) {
           if (existingIdx !== -1) {
@@ -249,16 +254,27 @@ export const useAppStore = create<AppState>()(
           return state;
         }
 
-        const variants = getPhotoVariants(photo);
-        const variantObj = variants.find(v => v.key === optionLetter);
-        const minQty = variantObj ? variantObj.defaultQuantity : (photo.defaultQuantity || 6);
+        let minQty = pObj.defaultQuantity;
+        const storePhoto = state.photos.find(p => p.id === photoId || p.photoCode === photoCode);
+        if (storePhoto) {
+          const variants = getPhotoVariants(storePhoto);
+          const variantObj = variants.find(v => v.key === optLetter);
+          if (variantObj) minQty = variantObj.defaultQuantity;
+        } else if (pObj.variants) {
+          const variants = getPhotoVariants(pObj);
+          const variantObj = variants.find(v => v.key === optLetter);
+          if (variantObj) minQty = variantObj.defaultQuantity;
+        }
+        if (!minQty || minQty <= 0) {
+          minQty = 1;
+        }
 
         const resolvedPhotoImg = 
-          photo.imageUri || 
-          (photo as any).imageUrl || 
-          (photo as any).image || 
-          (photo as any).photo || 
-          (Array.isArray((photo as any).images) && (photo as any).images[0]) || 
+          pObj.imageUri || 
+          pObj.imageUrl || 
+          pObj.image || 
+          pObj.photo || 
+          (Array.isArray(pObj.images) && pObj.images[0]) || 
           '';
 
         if (existingIdx !== -1) {
@@ -273,34 +289,30 @@ export const useAppStore = create<AppState>()(
           return { cart: updated };
         } else {
           const newItem: OrderCartItem = {
-            photoId: photo.id,
-            photoCode: targetPhotoCode,
+            photoId,
+            photoCode,
             imageUri: resolvedPhotoImg,
             imageUrl: resolvedPhotoImg,
-            categoryId: photo.categoryId,
-            subCategoryName: photo.subCategoryName,
-            optionLetter,
+            categoryId: pObj.categoryId || '',
+            subCategoryName: pObj.subCategoryName || '',
+            optionLetter: optLetter,
             quantity,
             defaultQuantity: minQty,
             id: targetId,
-            name: `${targetPhotoCode} (Option ${optionLetter})`,
-            variant: optionLetter,
+            name: `${photoCode} (Option ${optLetter})`,
+            variant: optLetter,
             price: 0
           };
           return { cart: [...state.cart, newItem] };
         }
       }),
-      updateCartItemQuantity: (index, quantity) => set((state) => {
-        if (index < 0 || index >= state.cart.length) return state;
-        if (quantity <= 0) {
-          const newCart = [...state.cart];
-          newCart.splice(index, 1);
-          return { cart: newCart };
-        }
-        const newCart = [...state.cart];
-        newCart[index] = { ...newCart[index], quantity };
-        return { cart: newCart };
-      }),
+      updateCartItemQuantity: (index, quantity) => {
+        const state = get();
+        if (index < 0 || index >= state.cart.length) return;
+        const targetItem = state.cart[index];
+        const optLetter = targetItem.optionLetter || targetItem.variant || 'A';
+        state.setItemQuantity(targetItem as any, optLetter, quantity);
+      },
       removeFromCart: (index) => set((state) => {
         const newCart = [...state.cart];
         newCart.splice(index, 1);

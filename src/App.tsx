@@ -1000,7 +1000,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl overflow-hidden p-1 flex-1">
                         <button
                           onClick={() => {
-                            const minQty = item.defaultQuantity || 6;
+                            const minQty = item.defaultQuantity || 1;
                             const target = item.quantity <= minQty ? 0 : item.quantity - minQty;
                             updateCartItemQuantity(idx, target);
                           }}
@@ -1013,7 +1013,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                         </span>
                         <button
                           onClick={() => {
-                            const minQty = item.defaultQuantity || 6;
+                            const minQty = item.defaultQuantity || 1;
                             const target = item.quantity + minQty;
                             updateCartItemQuantity(idx, target);
                           }}

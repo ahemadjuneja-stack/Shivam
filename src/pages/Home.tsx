@@ -106,7 +106,7 @@ export function Home() {
         bAvailable: true,
         cAvailable: true,
         dAvailable: true,
-        defaultQuantity: 6,
+        defaultQuantity: 1,
         sortOrder: item.sortOrder || 0,
         description: (item as any).description || ''
       };
