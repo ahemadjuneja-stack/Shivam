@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, setDoc, getDocFromServer } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAppStore } from '../store';
 import { Customer } from '../types';
@@ -33,11 +33,9 @@ export function Register() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [debugStatus, setDebugStatus] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setDebugStatus('1: button clicked');
     setErrorMsg(null);
 
     const shopName = formData.shopName.trim();
@@ -48,35 +46,14 @@ export function Register() {
     const pin = formData.pin.trim() || '1111';
 
     if (!shopName || !ownerName || !phone || !city || !address) {
-      setDebugStatus('STOPPED: Mandatory fields missing');
       setErrorMsg('Please fill in all mandatory fields.');
       return;
     }
 
-    setDebugStatus('2: fields validated');
     setIsSubmitting(true);
 
     try {
-      setDebugStatus('3: checking ID');
-      // Generate Customer ID as CUST-${Date.now().toString().slice(-6)} and verify uniqueness
-      let newCustomerId = `CUST-${Date.now().toString().slice(-6)}`;
-      let exists = true;
-      let attempts = 0;
-      while (exists && attempts < 10) {
-        try {
-          const checkSnap = await getDocFromServer(doc(db, 'customers', newCustomerId));
-          if (checkSnap.exists()) {
-            newCustomerId = `CUST-${(Date.now() + Math.floor(Math.random() * 1000)).toString().slice(-6)}`;
-            attempts++;
-          } else {
-            exists = false;
-          }
-        } catch {
-          exists = false;
-        }
-      }
-
-      setDebugStatus('4: saving to Firestore');
+      const newCustomerId = `CUST-${Math.floor(100000 + Math.random() * 900000)}`;
 
       const registrationData = {
         id: newCustomerId,
@@ -105,8 +82,14 @@ export function Register() {
 
       const payload = JSON.parse(JSON.stringify(registrationData));
 
-      await setDoc(doc(db, 'customers', newCustomerId), payload);
-      setDebugStatus('5: saved OK');
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout")), 30000)
+      );
+
+      await Promise.race([
+        setDoc(doc(db, 'customers', newCustomerId), payload),
+        timeoutPromise
+      ]);
 
       const newCustomer: Customer = {
         id: newCustomerId,
@@ -139,10 +122,11 @@ export function Register() {
         navigate('/');
       }, 1500);
     } catch (err: any) {
-      const errCode = err?.code || 'UNKNOWN';
-      const errMsg = err?.message || String(err);
-      setDebugStatus(`ERROR: ${errCode} ${errMsg}`);
-      setErrorMsg(err?.message || 'Registration failed');
+      if (err?.message === "Timeout") {
+        setErrorMsg("Server is slow. Your registration may have been saved, please check before trying again.");
+      } else {
+        setErrorMsg(err?.message || 'Registration failed');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -150,11 +134,6 @@ export function Register() {
 
   return (
     <div className="min-h-screen bg-brand-navy-dark text-slate-100 flex flex-col items-center justify-center p-4">
-      {debugStatus && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 999999, background: '#111827', color: '#ffffff', padding: '8px 16px', fontSize: '13px', fontFamily: 'monospace', textAlign: 'center', borderBottom: '1px solid #374151' }}>
-          {debugStatus}
-        </div>
-      )}
       <div className="w-full max-w-md bg-brand-navy-card border border-brand-navy-border rounded-2xl shadow-2xl p-6 sm:p-8 backdrop-blur-md">
         
         {/* Header */}

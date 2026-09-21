@@ -23,7 +23,7 @@ import {
   ClipboardList
 } from 'lucide-react';
 import React, { useState, useRef, useEffect } from 'react';
-import { doc, setDoc, updateDoc, serverTimestamp, getDocFromServer } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, COLLECTIONS, messaging, deleteCustomerWithCascade } from './firebase';
 import { getToken, onMessage } from 'firebase/messaging';
 import { ChatModal } from './components/ChatModal';
@@ -217,7 +217,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [networkOnline, setNetworkOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
   const [isDispatching, setIsDispatching] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
-  const [regDebugStatus, setRegDebugStatus] = useState<string>('');
 
   useEffect(() => {
     const handleOnline = () => setNetworkOnline(true);
@@ -475,7 +474,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setRegDebugStatus('1: button clicked');
     const phoneVal = formData.mobileNumber?.trim() || formData.phone?.trim() || '';
     const shopName = formData.shopName.trim();
     const ownerName = formData.ownerName.trim();
@@ -484,33 +482,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
     const pin = formData.pin?.trim() || '1111';
 
     if (!shopName || !ownerName || !phoneVal || !city || !address) {
-      setRegDebugStatus('STOPPED: Mandatory fields missing');
+      setAuthError("Please fill in all fields");
       return;
     }
 
-    setRegDebugStatus('2: fields validated');
     setIsRegistering(true);
 
     try {
-      setRegDebugStatus('3: checking ID');
-      let newCustomerId = `CUST-${Date.now().toString().slice(-6)}`;
-      let exists = true;
-      let attempts = 0;
-      while (exists && attempts < 10) {
-        try {
-          const checkSnap = await getDocFromServer(doc(db, 'customers', newCustomerId));
-          if (checkSnap.exists()) {
-            newCustomerId = `CUST-${(Date.now() + Math.floor(Math.random() * 1000)).toString().slice(-6)}`;
-            attempts++;
-          } else {
-            exists = false;
-          }
-        } catch {
-          exists = false;
-        }
-      }
-
-      setRegDebugStatus('4: saving to Firestore');
+      const newCustomerId = `CUST-${Math.floor(100000 + Math.random() * 900000)}`;
 
       const customerFirestorePayload = {
         id: newCustomerId,
@@ -539,8 +518,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
       const sanitizedCustomer = JSON.parse(JSON.stringify(customerFirestorePayload));
 
-      await setDoc(doc(db, 'customers', newCustomerId), sanitizedCustomer);
-      setRegDebugStatus('5: saved OK');
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout")), 30000)
+      );
+
+      await Promise.race([
+        setDoc(doc(db, 'customers', newCustomerId), sanitizedCustomer),
+        timeoutPromise
+      ]);
 
       const newCust: Customer = {
         id: newCustomerId,
@@ -571,9 +556,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
       setFormData(initialRegistrationFormData);
       setShowLogin(false);
     } catch (err: any) {
-      const errCode = err?.code || 'UNKNOWN';
-      const errMsg = err?.message || String(err);
-      setRegDebugStatus(`ERROR: ${errCode} ${errMsg}`);
+      const msg = err?.message || String(err);
+      if (msg === "Timeout") {
+        setAuthError("Server is slow. Your registration may have been saved, please check before trying again.");
+      } else {
+        setAuthError("Registration failed: " + msg);
+      }
     } finally {
       setIsRegistering(false);
     }
@@ -605,11 +593,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
   if (!currentCustomer) {
     return (
       <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased overflow-y-auto flex flex-col justify-center items-center p-4 z-[999]">
-        {regDebugStatus && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 999999, background: '#111827', color: '#ffffff', padding: '8px 16px', fontSize: '13px', fontFamily: 'monospace', textAlign: 'center', borderBottom: '1px solid #374151' }}>
-            {regDebugStatus}
-          </div>
-        )}
         <div className="w-full max-w-md bg-brand-navy-card border border-slate-700/80 rounded-2xl shadow-2xl p-6 sm:p-8 space-y-6 my-auto">
           <div className="text-center space-y-2">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-brand-gold/10 text-brand-gold border border-brand-gold/20 mb-2">
@@ -812,11 +795,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased overflow-hidden select-none pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] flex items-center justify-center">
-      {regDebugStatus && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 999999, background: '#111827', color: '#ffffff', padding: '8px 16px', fontSize: '13px', fontFamily: 'monospace', textAlign: 'center', borderBottom: '1px solid #374151' }}>
-          {regDebugStatus}
-        </div>
-      )}
       {/* MOBILE SHOWROOM CONTAINER */}
       <div 
         className="relative bg-brand-navy-dark overflow-hidden flex flex-col transition-all duration-300 shadow-2xl w-full h-full"

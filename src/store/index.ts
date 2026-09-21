@@ -34,7 +34,7 @@ import {
   db
 } from '../firebase';
 import { uploadMediaToStorage } from '../services/storageService';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { generateOrderId } from '../lib/idGenerator';
 
 interface AppState {
@@ -319,27 +319,16 @@ export const useAppStore = create<AppState>()(
         const orderIdNumber = generateOrderId();
         const custId = state.currentCustomer.customerId || state.currentCustomer.customerCode || 'CUST-GUEST';
 
-        // Detached background voice upload if exists - never blocks order submission
+        // Await voice note upload if exists to resolve getDownloadURL before setDoc
+        let uploadedVoiceUrl = '';
         const voiceNoteToUpload = state.orderVoiceNote;
         if (voiceNoteToUpload) {
-          uploadMediaToStorage(voiceNoteToUpload, 'voice_notes', `order_voice_${orderIdNumber}`)
-            .then(async (url) => {
-              if (url) {
-                try {
-                  const targetOrderRef = doc(db, 'orders', orderIdNumber);
-                  await updateDoc(targetOrderRef, {
-                    voiceNoteUrl: url,
-                    voiceUrl: url,
-                    audioUrl: url,
-                    voiceNoteUri: url
-                  });
-                  console.log('Background voice note attached successfully to order:', orderIdNumber);
-                } catch (updateErr) {
-                  console.warn('Non-blocking voice note attachment notice:', updateErr);
-                }
-              }
-            })
-            .catch((err) => console.warn('Background voice note upload catch:', err));
+          try {
+            uploadedVoiceUrl = await uploadMediaToStorage(voiceNoteToUpload, 'voice_notes', `order_voice_${orderIdNumber}`);
+            console.log('Voice note uploaded successfully, URL:', uploadedVoiceUrl);
+          } catch (uploadErr) {
+            console.warn('Voice note upload error:', uploadErr);
+          }
         }
 
         const standardizedItems = state.cart.map(item => {
@@ -389,10 +378,10 @@ export const useAppStore = create<AppState>()(
           totalAmount: 0,
           orderNote: state.orderNote || '',
           notes: state.orderNote || '',
-          voiceNoteUrl: '',
-          voiceUrl: '',
-          audioUrl: '',
-          voiceNoteUri: '',
+          voiceNoteUrl: uploadedVoiceUrl,
+          voiceUrl: uploadedVoiceUrl,
+          audioUrl: uploadedVoiceUrl,
+          voiceNoteUri: uploadedVoiceUrl,
           status: 'Pending',
           overallStatus: 'RECEIVED',
           imitationStatus: hasImitation ? 'PENDING' : 'NOT_APPLICABLE',
