@@ -319,6 +319,7 @@ export function useFirebaseSync() {
               imitationStatus: data.imitationStatus || 'PENDING',
               cosmeticsStatus: data.cosmeticsStatus || 'PENDING',
               hairStatus: data.hairStatus || 'PENDING',
+              departmentStatus: data.departmentStatus || {},
               createdAt: orderTimestamp
             });
           });

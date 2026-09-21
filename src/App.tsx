@@ -68,7 +68,8 @@ function VoiceRecorder() {
 
       mediaRecorder.current.onstop = () => {
         if (audioChunks.current.length > 0) {
-          const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' });
+          const recMime = mediaRecorder.current?.mimeType || 'audio/webm';
+          const audioBlob = new Blob(audioChunks.current, { type: recMime });
           if (audioBlob.size > 0) {
             const reader = new FileReader();
             reader.readAsDataURL(audioBlob);

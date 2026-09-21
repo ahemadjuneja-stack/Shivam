@@ -34,8 +34,52 @@ import {
   db
 } from '../firebase';
 import { uploadMediaToStorage } from '../services/storageService';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { generateOrderId } from '../lib/idGenerator';
+import { savePendingVoice, getPendingVoice, deletePendingVoice, listPendingVoiceIds } from '../utils/voiceQueue';
+
+const VOICE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+const voiceInFlight = new Set<string>();
+
+export async function uploadPendingVoice(orderId: string): Promise<void> {
+  if (voiceInFlight.has(orderId)) return;
+  voiceInFlight.add(orderId);
+  try {
+    const item = await getPendingVoice(orderId);
+    if (!item) return;
+    if (Date.now() - item.createdAt > VOICE_MAX_AGE_MS) {
+      await deletePendingVoice(orderId);
+      return;
+    }
+    const url = await uploadMediaToStorage(item.dataUrl, 'voice_notes', `order_voice_${orderId}`, 90000);
+    if (!url) throw new Error('Voice upload returned empty URL');
+
+    await updateDoc(doc(db, 'orders', orderId), {
+      voiceNoteUrl: url, voiceUrl: url, audioUrl: url, voiceNoteUri: url, voiceNoteStatus: 'done'
+    });
+    await deletePendingVoice(orderId);
+
+    useAppStore.setState((s: any) => ({
+      orders: s.orders.map((o: any) =>
+        (o.orderId === orderId || o.id === orderId)
+          ? { ...o, voiceNoteUrl: url, voiceUrl: url, audioUrl: url, voiceNoteUri: url, voiceNoteStatus: 'done' }
+          : o)
+    }));
+  } catch (err) {
+    console.error('[Voice] upload failed, will retry later:', orderId, err);
+  } finally {
+    voiceInFlight.delete(orderId);
+  }
+}
+
+export async function retryPendingVoices(): Promise<void> {
+  try {
+    const ids = await listPendingVoiceIds();
+    ids.forEach(id => { void uploadPendingVoice(id); });
+  } catch (e) {
+    console.error('[Voice] retry scan failed', e);
+  }
+}
 
 interface AppState {
   // Catalog Data
@@ -339,7 +383,7 @@ export const useAppStore = create<AppState>()(
         const orderIdNumber = generateOrderId();
         const custId = state.currentCustomer.customerId || state.currentCustomer.customerCode || 'CUST-GUEST';
 
-        // Check if recording is currently in progress
+        // Stop voice recording if currently in progress
         const wasRecording = get().isRecordingVoice;
         if (wasRecording) {
           const stopFn = get().stopVoiceRecordingFn;
@@ -350,37 +394,18 @@ export const useAppStore = create<AppState>()(
               console.error('Error stopping voice recording:', err);
             }
           }
-          // Await up to 5 seconds for recorder onstop event to finish saving audio Blob into orderVoiceNote
+          // Await up to 3.0 seconds for recorder onstop event to finish saving audio Blob into orderVoiceNote
           const startWait = Date.now();
-          while (get().isRecordingVoice && Date.now() - startWait < 5000) {
+          while (get().isRecordingVoice && Date.now() - startWait < 3000) {
             await new Promise((res) => setTimeout(res, 100));
           }
         }
 
         const voiceNoteToUpload = get().orderVoiceNote;
 
-        // If recording was in progress but stopping/saving failed, show error and cancel order
-        if (wasRecording && !voiceNoteToUpload) {
-          alert("Voice note could not be saved. Please try again.");
-          return false;
-        }
-
-        // Await voice note upload if exists to resolve getDownloadURL before setDoc
-        let uploadedVoiceUrl = '';
-        if (voiceNoteToUpload) {
-          try {
-            uploadedVoiceUrl = await uploadMediaToStorage(voiceNoteToUpload, 'voice_notes', `order_voice_${orderIdNumber}`);
-            console.log('Voice note uploaded successfully, URL:', uploadedVoiceUrl);
-          } catch (uploadErr) {
-            console.warn('Voice note upload error:', uploadErr);
-            alert("Voice note upload failed. Please try again.");
-            return false;
-          }
-        }
-
         const standardizedItems = state.cart.map(item => {
           const fallbackPhoto = state.photos.find(p => p.id === item.photoId || p.photoCode === item.photoCode);
-          const resolvedImage = 
+          let resolvedImage = 
             item.imageUri || 
             (item as any).imageUrl || 
             (item as any).image || 
@@ -390,6 +415,11 @@ export const useAppStore = create<AppState>()(
             (fallbackPhoto as any)?.imageUrl ||
             (fallbackPhoto as any)?.image ||
             '';
+
+          // Prevent massive base64 images from exceeding Firestore 1MB document limit
+          if (typeof resolvedImage === 'string' && resolvedImage.startsWith('data:') && resolvedImage.length > 50000) {
+            resolvedImage = '';
+          }
           
           return {
             photoCode: item.photoCode || (item as any).code || (item as any).name || 'SKU',
@@ -425,10 +455,11 @@ export const useAppStore = create<AppState>()(
           totalAmount: 0,
           orderNote: state.orderNote || '',
           notes: state.orderNote || '',
-          voiceNoteUrl: uploadedVoiceUrl,
-          voiceUrl: uploadedVoiceUrl,
-          audioUrl: uploadedVoiceUrl,
-          voiceNoteUri: uploadedVoiceUrl,
+          voiceNoteUrl: '',
+          voiceUrl: '',
+          audioUrl: '',
+          voiceNoteUri: '',
+          voiceNoteStatus: voiceNoteToUpload ? 'pending' : 'none',
           status: 'Pending',
           overallStatus: 'RECEIVED',
           imitationStatus: hasImitation ? 'PENDING' : 'NOT_APPLICABLE',
@@ -438,25 +469,52 @@ export const useAppStore = create<AppState>()(
         };
 
         try {
-          console.log("SENDING ORDER DIRECTLY TO FIRESTORE:", newOrder);
-          // Strip any unexpected undefined values to ensure Firestore compliance
           const sanitizedPayload = JSON.parse(JSON.stringify(newOrder));
           const orderRef = doc(db, 'orders', orderIdNumber);
 
-          await setDoc(orderRef, sanitizedPayload);
-          console.log('Order successfully written directly to Firestore orders:', orderIdNumber);
+          // 1) Save voice locally first (fast, survives app close)
+          if (voiceNoteToUpload) {
+            try {
+              await savePendingVoice(orderIdNumber, voiceNoteToUpload);
+            } catch (e) {
+              console.error('[Voice] IndexedDB save failed', e);
+            }
+          }
 
-          set({
-            orders: [newOrder, ...state.orders],
+          // 2) Write order, wait max 10s for server ack (write stays queued in persistent cache)
+          const writePromise = setDoc(orderRef, sanitizedPayload);
+          const result = await Promise.race([
+            writePromise.then(() => 'ok' as const),
+            new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 10000)),
+          ]);
+          if (result === 'timeout') {
+            console.warn('Order write not acked in 10s, queued and will sync automatically:', orderIdNumber);
+            writePromise.catch((e) => console.error('Queued order write failed later:', e));
+          }
+
+          // 3) Background voice upload, do NOT await
+          if (voiceNoteToUpload) void uploadPendingVoice(orderIdNumber);
+
+          // 4) Update local state with a functional set (fixes stale state.orders) and clear cart
+          const localOrderObj = {
+            ...newOrder,
+            voiceNoteUrl: voiceNoteToUpload || '',
+            voiceUrl: voiceNoteToUpload || '',
+            audioUrl: voiceNoteToUpload || '',
+            voiceNoteUri: voiceNoteToUpload || ''
+          };
+          set((s) => ({
+            orders: [localOrderObj, ...s.orders],
             cart: [],
             orderNote: '',
             orderVoiceNote: null,
             isCartOpen: false
-          });
+          }));
           return true;
         } catch (error: any) {
-          console.error("FIRESTORE ORDER WRITE ERROR:", error);
-          window.alert("Order Dispatch Error: " + (error?.message || String(error)));
+          console.error('FIRESTORE ORDER WRITE ERROR:', error);
+          if (voiceNoteToUpload) deletePendingVoice(orderIdNumber).catch(() => {});
+          window.alert('Order Dispatch Error: ' + (error?.message || String(error)));
           throw error;
         }
       },
@@ -695,3 +753,11 @@ export const useAppStore = create<AppState>()(
     }
   )
 );
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { void retryPendingVoices(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void retryPendingVoices();
+  });
+  setTimeout(() => { void retryPendingVoices(); }, 3000);
+}

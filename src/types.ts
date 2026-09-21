@@ -282,6 +282,7 @@ export interface WholesaleOrder {
   voiceNoteUrl?: string | null;
   voiceUrl?: string | null;
   audioUrl?: string | null;
+  voiceNoteStatus?: 'none' | 'pending' | 'done';
   status: 'Pending' | 'Processing' | 'Dispatched' | string;
   imitationStatus?: string; // PENDING, DONE, NOT_APPLICABLE
   cosmeticsStatus?: string;

@@ -1,7 +1,8 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   initializeFirestore,
-  memoryLocalCache,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   doc, 
   setDoc, 
   updateDoc, 
@@ -40,7 +41,8 @@ export type MediaFolder = 'catalog' | 'voice_notes' | 'communication' | 'cart_at
 export async function uploadMediaToStorage(
   fileOrBlob: Blob | File | string,
   folder: MediaFolder,
-  prefix: string = 'media'
+  prefix: string = 'media',
+  timeoutMs: number = 20000
 ): Promise<string> {
   if (!fileOrBlob) return '';
 
@@ -70,9 +72,9 @@ export async function uploadMediaToStorage(
 
   const mime = (uploadableBlob as Blob).type || '';
   let ext = 'jpg';
-  if (mime.includes('audio') || mime.includes('webm')) ext = 'webm';
-  else if (mime.includes('mp4') || mime.includes('m4a')) ext = 'm4a';
+  if (mime.includes('mp4') || mime.includes('m4a')) ext = 'm4a';
   else if (mime.includes('wav')) ext = 'wav';
+  else if (mime.includes('audio') || mime.includes('webm')) ext = 'webm';
   else if (mime.includes('png')) ext = 'png';
   else if (mime.includes('webp')) ext = 'webp';
   else if (mime.includes('gif')) ext = 'gif';
@@ -88,41 +90,24 @@ export async function uploadMediaToStorage(
     return await getDownloadURL(snapshot.ref);
   };
 
-  // Strict 20-second timeout guard to prevent UI freezes while allowing audio uploads
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<string>((_, reject) => {
-    setTimeout(() => reject(new Error('Cloud Storage upload timed out after 20s')), 20000);
+    timer = setTimeout(() => reject(new Error(`Cloud Storage upload timed out after ${timeoutMs / 1000}s`)), timeoutMs);
   });
-
-  const downloadUrl = await Promise.race([uploadTask(), timeoutPromise]);
-  return downloadUrl;
+  try {
+    return await Promise.race([uploadTask(), timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // Custom Database ID
 export const FIRESTORE_DATABASE_ID = "ai-studio-shivam-6138ca5c-1e3b-412f-957d-d52501eff503";
 
-// Connect explicitly to named database instance with memory local cache and auto-detecting transport
 export const db = initializeFirestore(app, {
-  localCache: memoryLocalCache(),
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   experimentalAutoDetectLongPolling: true
 }, FIRESTORE_DATABASE_ID);
-
-// Clean up any stale IndexedDB offline queues from previous persistent sessions
-if (typeof window !== 'undefined' && 'indexedDB' in window) {
-  try {
-    if (typeof indexedDB.databases === 'function') {
-      indexedDB.databases().then((dbs) => {
-        dbs.forEach((dbInfo) => {
-          if (dbInfo.name && (dbInfo.name.includes('firestore') || dbInfo.name.includes('firebase'))) {
-            try {
-              indexedDB.deleteDatabase(dbInfo.name);
-              console.log('[Firestore] Purged legacy offline IndexedDB:', dbInfo.name);
-            } catch (_) {}
-          }
-        });
-      }).catch(() => {});
-    }
-  } catch (_) {}
-}
 
 
 // Initialize Firebase Messaging safely

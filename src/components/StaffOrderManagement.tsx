@@ -7,19 +7,14 @@ import {
   Square, 
   Paperclip, 
   Send, 
-  ClipboardList, 
-  Filter, 
-  Clock, 
   MapPin, 
   Phone, 
   MessageCircle, 
   FileText, 
   Store,
   FolderOpen,
-  SlidersHorizontal,
-  Users,
-  Database,
-  Trash2
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { WholesaleOrder, ChatMessage } from '../types';
@@ -29,7 +24,7 @@ import { CustomerManager } from './CustomerManager';
 import { DatabaseCleanManager } from './DatabaseCleanManager';
 import { doc, updateDoc } from 'firebase/firestore';
 import { generateMessageId } from '../lib/idGenerator';
-import { db, COLLECTIONS, scanDatabaseForOrphansAndStaleData, executeDatabaseCleanup } from '../firebase';
+import { db, COLLECTIONS } from '../firebase';
 import { uploadMediaToStorage } from '../services/storageService';
 
 export function StaffOrderManagement() {
@@ -38,47 +33,181 @@ export function StaffOrderManagement() {
   const messages = useAppStore(state => state.messages) as ChatMessage[];
   const addMessage = useAppStore(state => state.addMessage);
 
-  const [workspaceMode, setWorkspaceMode] = useState<'packing' | 'displayOrder' | 'customers' | 'databaseCleaner'>('packing');
-  const [isQuickCleaning, setIsQuickCleaning] = useState(false);
-  const deleteOrderInStore = useAppStore(state => state.deleteOrder);
-  const deletePhotoInStore = useAppStore(state => state.deletePhoto);
+  const [workspaceMode, setWorkspaceMode] = useState<'manageOrders' | 'packing' | 'displayOrder' | 'customers' | 'databaseCleaner'>('manageOrders');
+  const [manageStatusFilter, setManageStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'done'>('pending');
 
-  const handleQuickCleanDatabase = async () => {
-    const confirmed = window.confirm(
-      `SAFE DATABASE CLEANUP\n\n` +
-      `Scan and prune orphaned orders (missing customer profile) and empty/abandoned carts (>24h old) from Firestore?\n\n` +
-      `Click OK to proceed safely.`
-    );
-    if (!confirmed) return;
+  // Default the staff department category filter from currentCustomer's assigned department
+  const getDefaultCategoryFilter = (): 'all' | 'cosmetics' | 'imitation' | 'hair' => {
+    if (currentCustomer?.role === 'admin') return 'all';
+    const dept = (
+      (currentCustomer as any)?.department || 
+      (currentCustomer as any)?.staffCategory || 
+      (currentCustomer as any)?.departmentAssigned || 
+      ''
+    ).toLowerCase();
+    if (dept.includes('cosmetic')) return 'cosmetics';
+    if (dept.includes('imitation')) return 'imitation';
+    if (dept.includes('hair')) return 'hair';
+    return 'all';
+  };
 
-    setIsQuickCleaning(true);
-    try {
-      const scanResult = await scanDatabaseForOrphansAndStaleData();
-      if (scanResult.totalFound === 0) {
-        alert('Database is already clean! No orphaned orders or stale carts found.');
-        return;
+  const [manageCategoryFilter, setManageCategoryFilter] = useState<'all' | 'cosmetics' | 'imitation' | 'hair'>(getDefaultCategoryFilter);
+
+  // Sync deptFilter with manageCategoryFilter for packing view item filtering
+  const deptFilter = manageCategoryFilter;
+
+  // Helper to determine if a department is done for an order
+  const isDepartmentDone = (order: WholesaleOrder, deptKey: 'imitation' | 'cosmetics' | 'hair'): boolean => {
+    // 1. Check flat field (imitationStatus, cosmeticsStatus, hairStatus)
+    const flatVal = deptKey === 'imitation' ? order.imitationStatus :
+                    deptKey === 'cosmetics' ? order.cosmeticsStatus :
+                    order.hairStatus;
+    if (flatVal) {
+      const norm = String(flatVal).toUpperCase();
+      if (norm === 'DONE' || norm === 'PACKED' || norm === 'COMPLETED') return true;
+    }
+
+    // 2. Check nested object field (departmentStatus.imitation.status)
+    const deptObj = (order as any).departmentStatus?.[deptKey];
+    if (deptObj) {
+      const statusVal = typeof deptObj === 'string' ? deptObj : (deptObj.status || '');
+      const norm = String(statusVal).toUpperCase();
+      if (norm === 'DONE' || norm === 'PACKED' || norm === 'COMPLETED') return true;
+    }
+
+    return false;
+  };
+
+  // Helper to extract unique categories/departments from order items
+  const getPresentDepartmentsFromItems = (order: WholesaleOrder): ('imitation' | 'cosmetics' | 'hair')[] => {
+    const deptsSet = new Set<'imitation' | 'cosmetics' | 'hair'>();
+    
+    (order.items || []).forEach((item: any) => {
+      const cat = (item.categoryId || item.category || '').toLowerCase();
+      if (cat === 'imitation' || cat === 'imitation_jewelry' || cat.includes('imitation')) {
+        deptsSet.add('imitation');
+      } else if (cat === 'cosmetics' || cat.includes('cosmetic')) {
+        deptsSet.add('cosmetics');
+      } else if (cat === 'hair' || cat === 'hair_accessories' || cat.includes('hair')) {
+        deptsSet.add('hair');
+      } else {
+        const subName = (item.subCategoryName || item.name || '').toLowerCase();
+        if (subName.includes('earring') || subName.includes('jhumka') || subName.includes('jewelry')) {
+          deptsSet.add('imitation');
+        } else if (subName.includes('cosmetic') || subName.includes('makeup') || subName.includes('lipstick')) {
+          deptsSet.add('cosmetics');
+        } else if (subName.includes('hair') || subName.includes('clip') || subName.includes('band')) {
+          deptsSet.add('hair');
+        }
       }
-      const summary = await executeDatabaseCleanup(scanResult);
-      scanResult.orphanedOrders.forEach(o => deleteOrderInStore(o.id));
-      scanResult.invalidPhotos.forEach(p => deletePhotoInStore(p.id, p.photoCode));
-      alert(`Database Cleanup Complete!\n• Pruned ${summary.cleanedOrders} orphaned orders\n• Pruned ${summary.cleanedCarts} abandoned carts\n• Pruned ${summary.cleanedPhotos} corrupted product entries.`);
-    } catch (err: any) {
-      console.error('Quick clean failed:', err);
-      alert(`Cleanup error: ${err?.message || 'Failed to clean database.'}`);
-    } finally {
-      setIsQuickCleaning(false);
+    });
+
+    // Fixed order: Imitation Jewelry, Cosmetics, Hair Accessories
+    return (['imitation', 'cosmetics', 'hair'] as const).filter(d => deptsSet.has(d));
+  };
+
+  // Helper to determine dynamic overall order status state
+  const getOrderStatusState = (order: WholesaleOrder): 'DONE' | 'IN_PROGRESS' | 'PENDING' => {
+    const presentDepts = getPresentDepartmentsFromItems(order);
+    if (presentDepts.length === 0) return 'PENDING';
+
+    const completedCount = presentDepts.filter(d => isDepartmentDone(order, d)).length;
+
+    if (completedCount === presentDepts.length) {
+      return 'DONE';
+    } else if (completedCount > 0) {
+      return 'IN_PROGRESS';
+    } else {
+      return 'PENDING';
     }
   };
 
-  // Default the staff department to currentCustomer's department or 'imitation'
-  const defaultStaffDept = ((currentCustomer as any)?.department?.toLowerCase() || 'imitation') as 'imitation' | 'cosmetics' | 'hair';
-  const [staffDept, setStaffDept] = useState<'imitation' | 'cosmetics' | 'hair'>(defaultStaffDept);
+  // Filtered and sorted orders list for Manage Orders screen
+  const displayedManageOrders = orders
+    .filter(order => {
+      const presentDepts = getPresentDepartmentsFromItems(order);
 
-  // Category filter dropdown selection (Defaults to the staff's assigned department)
-  const [deptFilter, setDeptFilter] = useState<string>(defaultStaffDept);
+      if (manageCategoryFilter !== 'all') {
+        // Order must contain items of the selected department
+        if (!presentDepts.includes(manageCategoryFilter)) {
+          return false;
+        }
 
-  // Active order selection
+        const isDeptDone = isDepartmentDone(order, manageCategoryFilter);
+        const overallStatus = getOrderStatusState(order);
+
+        // Status filter applies to the selected department's own status
+        if (manageStatusFilter === 'pending') {
+          return !isDeptDone;
+        } else if (manageStatusFilter === 'in_progress') {
+          return !isDeptDone && overallStatus === 'IN_PROGRESS';
+        } else if (manageStatusFilter === 'done') {
+          return isDeptDone;
+        }
+        return true; // 'all'
+      } else {
+        // With 'All Categories', use overall order status
+        const overallStatus = getOrderStatusState(order);
+
+        if (manageStatusFilter === 'pending') {
+          return overallStatus === 'PENDING' || overallStatus === 'IN_PROGRESS';
+        } else if (manageStatusFilter === 'in_progress') {
+          return overallStatus === 'IN_PROGRESS';
+        } else if (manageStatusFilter === 'done') {
+          return overallStatus === 'DONE';
+        }
+        return true; // 'all'
+      }
+    })
+    .sort((a, b) => {
+      const statusA = getOrderStatusState(a);
+      const statusB = getOrderStatusState(b);
+
+      // Prioritize IN_PROGRESS orders at the top so staff notice active orders
+      if (statusA === 'IN_PROGRESS' && statusB !== 'IN_PROGRESS') return -1;
+      if (statusA !== 'IN_PROGRESS' && statusB === 'IN_PROGRESS') return 1;
+
+      // PENDING before DONE when viewing all
+      if (statusA === 'PENDING' && statusB === 'DONE') return -1;
+      if (statusA === 'DONE' && statusB === 'PENDING') return 1;
+
+      const timeA = new Date(a.createdAt || 0).getTime();
+      const timeB = new Date(b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+  // Active order selection & packing split-view selection
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
+  const [selectedOrderForPacking, setSelectedOrderForPacking] = useState<WholesaleOrder | null>(null);
+
+  // Helper to determine item department
+  const getItemDepartment = (item: any): 'imitation' | 'cosmetics' | 'hair' | 'other' => {
+    const cat = (item.categoryId || item.category || '').toLowerCase();
+    if (cat === 'imitation' || cat === 'imitation_jewelry' || cat.includes('imitation')) {
+      return 'imitation';
+    } else if (cat === 'cosmetics' || cat.includes('cosmetic')) {
+      return 'cosmetics';
+    } else if (cat === 'hair' || cat === 'hair_accessories' || cat.includes('hair')) {
+      return 'hair';
+    } else {
+      const subName = (item.subCategoryName || item.name || '').toLowerCase();
+      if (subName.includes('earring') || subName.includes('jhumka') || subName.includes('jewelry')) {
+        return 'imitation';
+      } else if (subName.includes('cosmetic') || subName.includes('makeup') || subName.includes('lipstick')) {
+        return 'cosmetics';
+      } else if (subName.includes('hair') || subName.includes('clip') || subName.includes('band')) {
+        return 'hair';
+      }
+    }
+    return 'other';
+  };
+
+  // Helper to filter order items based on active category filter
+  const getFilteredOrderItems = (order: WholesaleOrder) => {
+    const items = order.items || [];
+    if (manageCategoryFilter === 'all') return items;
+    return items.filter(item => getItemDepartment(item) === manageCategoryFilter);
+  };
 
   // Photo detail modal state
   const [selectedPhotoDetail, setSelectedPhotoDetail] = useState<{
@@ -218,6 +347,54 @@ export function StaffOrderManagement() {
     }
     return true;
   }) : [];
+
+  // Group items by product (key = photoId, fallback photoCode) for display
+  const groupedOrderProducts = (() => {
+    const map = new Map<string, {
+      photoId: string;
+      photoCode: string;
+      imageUri: string;
+      subCategoryName: string;
+      variants: { variant: string; quantity: number }[];
+      totalPcs: number;
+      shadesLine: string;
+    }>();
+
+    filteredOrderItems.forEach(item => {
+      const key = item.photoId || item.photoCode || 'SKU';
+      const variant = item.variant || item.optionLetter || 'A';
+      const qty = Number(item.quantity) || 0;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          photoId: key,
+          photoCode: item.photoCode || 'SKU',
+          imageUri: item.imageUri || '',
+          subCategoryName: item.subCategoryName || '',
+          variants: [],
+          totalPcs: 0,
+          shadesLine: ''
+        });
+      }
+
+      const group = map.get(key)!;
+      group.variants.push({ variant, quantity: qty });
+      group.totalPcs += qty;
+    });
+
+    return Array.from(map.values()).map(group => {
+      const shadesLine = group.variants
+        .map(v => `${v.variant}: ${v.quantity}`)
+        .join(' · ');
+      return {
+        ...group,
+        shadesLine
+      };
+    });
+  })();
+
+  const designsCount = groupedOrderProducts.length;
+  const totalPieces = groupedOrderProducts.reduce((sum, p) => sum + p.totalPcs, 0);
 
   // Chat messages between this order's customer and staff
   const customerChatMessages = messages.filter(m => {
@@ -380,7 +557,7 @@ export function StaffOrderManagement() {
       if (dept === 'hair') updatedHairStatus = 'DONE';
 
       // Check if all present departments are done
-      const presentDepts = getPresentDepartments(order);
+      const presentDepts = getPresentDepartmentsFromItems(order);
       const allDone = presentDepts.every(d => {
         if (d === dept) return true;
         if (d === 'imitation') return updatedImitationStatus === 'DONE';
@@ -406,146 +583,325 @@ export function StaffOrderManagement() {
     }
   };
 
+  // Real-time Department level status update - In Progress
+  const handleMarkDepartmentInProgress = async (order: WholesaleOrder, dept: 'imitation' | 'cosmetics' | 'hair') => {
+    try {
+      const orderRef = doc(db, COLLECTIONS.ORDERS, order.orderId || order.id);
+      
+      const currentDeptStatus = (order as any).departmentStatus || {};
+      const updatedDeptStatus = {
+        ...currentDeptStatus,
+        [dept]: {
+          status: 'In Progress',
+          updatedBy: currentCustomer?.ownerName || 'Staff',
+          updatedAt: Date.now()
+        }
+      };
+
+      let updatedImitationStatus = order.imitationStatus || 'PENDING';
+      let updatedCosmeticsStatus = order.cosmeticsStatus || 'PENDING';
+      let updatedHairStatus = order.hairStatus || 'PENDING';
+
+      if (dept === 'imitation' && updatedImitationStatus !== 'DONE') updatedImitationStatus = 'IN_PROGRESS';
+      if (dept === 'cosmetics' && updatedCosmeticsStatus !== 'DONE') updatedCosmeticsStatus = 'IN_PROGRESS';
+      if (dept === 'hair' && updatedHairStatus !== 'DONE') updatedHairStatus = 'IN_PROGRESS';
+
+      await updateDoc(orderRef, {
+        imitationStatus: updatedImitationStatus,
+        cosmeticsStatus: updatedCosmeticsStatus,
+        hairStatus: updatedHairStatus,
+        departmentStatus: updatedDeptStatus,
+        overallStatus: 'IN_PROGRESS',
+        status: 'Processing',
+        updatedAt: Date.now()
+      });
+    } catch (error) {
+      console.error("Error updating department in progress status:", error);
+    }
+  };
+
+  const handleMarkInProgressForSelectedOrder = async () => {
+    if (!selectedOrderForPacking) return;
+
+    const presentDepts = getPresentDepartmentsFromItems(selectedOrderForPacking);
+
+    if (manageCategoryFilter !== 'all') {
+      await handleMarkDepartmentInProgress(selectedOrderForPacking, manageCategoryFilter);
+    } else {
+      for (const dept of presentDepts) {
+        await handleMarkDepartmentInProgress(selectedOrderForPacking, dept);
+      }
+    }
+  };
+
+  // Handler for MARK DONE button in selected order split-view
+  const handleMarkDoneForSelectedOrder = async () => {
+    if (!selectedOrderForPacking) return;
+
+    const presentDepts = getPresentDepartmentsFromItems(selectedOrderForPacking);
+
+    if (manageCategoryFilter !== 'all') {
+      await handleMarkDepartmentDone(selectedOrderForPacking, manageCategoryFilter);
+    } else {
+      for (const dept of presentDepts) {
+        await handleMarkDepartmentDone(selectedOrderForPacking, dept);
+      }
+    }
+
+    setSelectedOrderForPacking(null);
+  };
+
   return (
     <div className="flex-grow flex flex-col overflow-hidden h-full bg-brand-navy-dark select-none text-slate-100">
       
-      {/* STAFF PACKING WORKSPACE TOP HEADER */}
-      <div className="bg-brand-navy-card/90 backdrop-blur-md border-b border-brand-navy-border p-3 sm:p-4 flex flex-col gap-3 flex-shrink-0 z-10">
-        
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Active staff role badge */}
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400">
-              <ClipboardList size={20} />
+      {/* SPLIT-VIEW ORDER PACKING SCREEN */}
+      {selectedOrderForPacking ? (
+        <div className="flex-grow flex flex-col h-[calc(100vh-64px)] overflow-hidden bg-slate-950 text-slate-100 select-none">
+          {/* Header Bar */}
+          <div className="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-b border-slate-800 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSelectedOrderForPacking(null)}
+                className="bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold px-3.5 py-1.5 rounded-full text-xs uppercase tracking-wider transition cursor-pointer shadow-md"
+              >
+                &lt; BACK
+              </button>
+              <span className="text-slate-400 font-extrabold text-xs uppercase tracking-wider">
+                MANAGE ORDERS / <span className="text-slate-200">{(selectedOrderForPacking as any).customerName || selectedOrderForPacking.shopName || (selectedOrderForPacking as any).ownerName || 'Customer'}</span>
+              </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-black tracking-wider text-white uppercase">Staff Order Packing</h2>
-                <span className="text-[10px] bg-purple-500/20 text-purple-300 font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider border border-purple-500/20">
-                  Staff: {staffDept.toUpperCase()}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400">Manage packing lists & dispatch items in real-time</p>
+            <div className="text-amber-400 text-xs font-black font-mono tracking-wide">
+              {(selectedOrderForPacking as any).customerName || selectedOrderForPacking.shopName || (selectedOrderForPacking as any).ownerName || 'Customer'}
             </div>
           </div>
 
-          {/* Quick Staff Department selection (Foolproof override if database field not set) */}
-          <div className="flex items-center gap-1.5 self-end sm:self-auto">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Switch Duty:</span>
-            <select
-              value={staffDept}
-              onChange={(e) => {
-                const val = e.target.value as 'imitation' | 'cosmetics' | 'hair';
-                setStaffDept(val);
-                setDeptFilter(val);
-              }}
-              className="bg-slate-900 border border-slate-700/80 rounded-lg text-xs text-white px-2 py-1 font-bold focus:outline-none focus:border-purple-500 transition cursor-pointer"
-            >
-              <option value="imitation">Imitation Duty</option>
-              <option value="cosmetics">Cosmetics Duty</option>
-              <option value="hair">Hair Accessories Duty</option>
-            </select>
+          {/* Two-Column Split Body */}
+          <div className="flex flex-row flex-1 overflow-hidden gap-4 p-4">
+            {/* Left Column (Product Thumbnails Grid - 65% to 70% Width) */}
+            <div className="flex-1 h-full overflow-y-auto pr-2 scrollbar-thin">
+              {getFilteredOrderItems(selectedOrderForPacking).length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-2">
+                  <FolderOpen size={40} className="text-slate-600" />
+                  <p className="text-xs font-bold">No items found for this department in this order.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {getFilteredOrderItems(selectedOrderForPacking).map((item: any, idx: number) => {
+                    const itemImg = item.imageUrl || item.imageUri || item.photoUrl || item.image || item.photoUri || '';
+                    const itemName = item.subCategoryName || item.name || item.photoCode || item.code || `Item #${idx + 1}`;
+                    const itemQty = item.quantity || item.qty || 1;
+
+                    return (
+                      <div
+                        key={idx}
+                        className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 flex flex-col justify-between relative shadow-md hover:border-slate-700 transition"
+                      >
+                        {/* Item Image */}
+                        <div className="w-full aspect-[4/3] bg-black/40 rounded-lg overflow-hidden flex items-center justify-center mb-2 relative border border-slate-800/60">
+                          {itemImg ? (
+                            <img src={itemImg} alt={itemName} className="w-full h-full object-contain" />
+                          ) : (
+                            <span className="text-slate-500 font-mono text-xs">Image Missing</span>
+                          )}
+                        </div>
+
+                        {/* Title & Pcs Row */}
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/40">
+                          <span className="font-extrabold text-xs text-white line-clamp-1 truncate" title={itemName}>
+                            {itemName}
+                          </span>
+                          <span className="text-amber-400 font-bold text-xs whitespace-nowrap shrink-0">
+                            · {itemQty} pcs
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Right Column (Fixed Control Sidebar - 30% to 35% Width) */}
+            <div className="w-80 md:w-96 shrink-0 h-full flex flex-col justify-between bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 shadow-xl">
+              {/* Top Section (Customer Notes & Voice) */}
+              <div className="flex flex-col gap-3">
+                {/* NOTE: */}
+                <div>
+                  <span className="text-xs font-black tracking-wider text-gray-400 uppercase mb-1 block">NOTE:</span>
+                  <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-sm text-gray-200 min-h-[90px] max-h-[140px] overflow-y-auto font-medium leading-relaxed">
+                    {(selectedOrderForPacking as any).note || selectedOrderForPacking.notes || (selectedOrderForPacking as any).customerNote || 'No note provided.'}
+                  </div>
+                </div>
+
+                {/* VOICE NOTE: */}
+                <div>
+                  <span className="text-xs font-black tracking-wider text-gray-400 uppercase mb-1 block">VOICE NOTE:</span>
+                  {selectedOrderForPacking.voiceNoteUrl || (selectedOrderForPacking as any).voiceUrl || (selectedOrderForPacking as any).audioNoteUrl ? (
+                    <audio
+                      src={selectedOrderForPacking.voiceNoteUrl || (selectedOrderForPacking as any).voiceUrl || (selectedOrderForPacking as any).audioNoteUrl}
+                      controls
+                      className="w-full h-10 mt-1"
+                    />
+                  ) : (
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-xs text-gray-500 font-semibold text-center">
+                      No voice note.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Bottom Action Buttons */}
+              <div className="flex items-center gap-3 pt-4 border-t border-slate-800/60 mt-auto">
+                <button
+                  onClick={handleMarkInProgressForSelectedOrder}
+                  className="bg-amber-400 hover:bg-amber-300 active:scale-95 text-slate-950 font-black py-3.5 px-4 rounded-xl text-sm flex-1 shadow-lg shadow-amber-500/20 transition cursor-pointer uppercase tracking-wider text-center"
+                >
+                  IN PROGRESS
+                </button>
+                <button
+                  onClick={handleMarkDoneForSelectedOrder}
+                  className="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black py-3.5 px-4 rounded-xl text-sm flex-1 shadow-lg shadow-emerald-600/20 transition cursor-pointer uppercase tracking-wider text-center"
+                >
+                  DONE
+                </button>
+              </div>
+            </div>
           </div>
         </div>
+      ) : workspaceMode === 'manageOrders' ? (
+        <div className="flex-1 flex flex-col overflow-hidden bg-slate-950 p-4 sm:p-6 text-slate-100">
+          {/* Combined Header & Modern Horizontal Scrollable Filter Toolbar */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800/80 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-black text-white tracking-wide">Manage Orders</h2>
+            </div>
 
-        {/* Filters and Active Order Selectors */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 border-t border-slate-800/60">
-          
-          {/* Department Filter Selector */}
-          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5">
-            <Filter size={14} className="text-slate-400 flex-shrink-0" />
-            <span className="text-xs font-bold text-slate-400 tracking-wider whitespace-nowrap">Filter Dept:</span>
-            <select
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-              className="flex-1 bg-transparent text-xs text-white font-bold focus:outline-none cursor-pointer"
-            >
-              <option value="imitation">Imitation Jewelry Items</option>
-              <option value="cosmetics">Cosmetics Items</option>
-              <option value="hair">Hair Accessories Items</option>
-              <option value="all">All Items (Full Visibility)</option>
-            </select>
+            {/* Two Dropdown Controls (Pill Style) */}
+            <div className="flex items-center gap-2.5 shrink-0">
+              {/* Department Dropdown Pill */}
+              <div className="relative inline-flex items-center">
+                <select
+                  value={manageCategoryFilter}
+                  onChange={(e) => setManageCategoryFilter(e.target.value as 'all' | 'cosmetics' | 'imitation' | 'hair')}
+                  className="appearance-none bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold text-xs rounded-full px-4 py-1.5 pr-8 cursor-pointer shadow-md shadow-amber-500/20 focus:outline-none transition-all duration-200"
+                >
+                  <option value="all" className="bg-slate-900 text-white font-semibold">All Categories</option>
+                  <option value="cosmetics" className="bg-slate-900 text-white font-semibold">Cosmetics</option>
+                  <option value="imitation" className="bg-slate-900 text-white font-semibold">Imitation Jewelry</option>
+                  <option value="hair" className="bg-slate-900 text-white font-semibold">Hair Accessories</option>
+                </select>
+                <ChevronDown size={14} className="absolute right-2.5 text-slate-950 pointer-events-none" />
+              </div>
+
+              {/* Status Dropdown Pill */}
+              <div className="relative inline-flex items-center">
+                <select
+                  value={manageStatusFilter}
+                  onChange={(e) => setManageStatusFilter(e.target.value as 'all' | 'pending' | 'in_progress' | 'done')}
+                  className={`appearance-none font-bold text-xs rounded-full px-4 py-1.5 pr-8 cursor-pointer shadow-md focus:outline-none transition-all duration-200 ${
+                    manageStatusFilter === 'pending'
+                      ? 'bg-purple-600 text-white shadow-purple-600/30'
+                      : manageStatusFilter === 'in_progress'
+                      ? 'bg-amber-500 text-slate-950 shadow-amber-500/30'
+                      : manageStatusFilter === 'done'
+                      ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                      : 'bg-indigo-600 text-white shadow-indigo-600/30'
+                  }`}
+                >
+                  <option value="pending" className="bg-slate-900 text-white font-semibold">Pending</option>
+                  <option value="in_progress" className="bg-slate-900 text-white font-semibold">In Progress</option>
+                  <option value="done" className="bg-slate-900 text-white font-semibold">Done</option>
+                  <option value="all" className="bg-slate-900 text-white font-semibold">All</option>
+                </select>
+                <ChevronDown size={14} className={`absolute right-2.5 pointer-events-none ${manageStatusFilter === 'in_progress' ? 'text-slate-950' : 'text-white'}`} />
+              </div>
+            </div>
           </div>
 
-          {/* Active Orders Dropdown */}
-          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5">
-            <Clock size={14} className="text-amber-400 flex-shrink-0 animate-pulse" />
-            <span className="text-xs font-bold text-slate-400 tracking-wider whitespace-nowrap">Select Order:</span>
-            {filteredOrders.length === 0 ? (
-              <span className="text-xs font-bold text-slate-500">No active orders</span>
+          {/* Scrollable Order Row Cards List */}
+          <div className="space-y-3 flex-1 overflow-y-auto max-h-[calc(100vh-220px)] pr-1 scrollbar-thin">
+            {displayedManageOrders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-2">
+                <FolderOpen size={36} className="text-slate-600" />
+                <p className="text-xs font-bold">No orders found matching the selected filters.</p>
+              </div>
             ) : (
-              <select
-                value={selectedOrderId}
-                onChange={(e) => setSelectedOrderId(e.target.value)}
-                className="flex-1 bg-transparent text-xs text-brand-gold font-bold focus:outline-none cursor-pointer"
-              >
-                {filteredOrders.map((o) => {
-                  const number = o.orderNumber || `#${o.orderId.substring(0, 6).toUpperCase()}`;
-                  return (
-                    <option key={o.orderId || o.id} value={o.orderId || o.id} className="text-white">
-                      {number} • {o.shopName} ({o.cityName || 'N/A'}) • {o.totalItemsCount} items
-                    </option>
-                  );
-                })}
-              </select>
+              displayedManageOrders.map((order) => {
+                const presentDepts = getPresentDepartmentsFromItems(order);
+                const statusState = getOrderStatusState(order);
+                const itemCount = order.totalItemsCount || order.items?.length || 0;
+                const city = order.cityName || 'N/A';
+                const shopName = order.shopName || 'Unknown Shop';
+                const orderNum = order.orderNumber || `#${(order.orderId || order.id || '').substring(0, 6).toUpperCase()}`;
+
+                return (
+                  <div
+                    key={order.orderId || order.id}
+                    onClick={() => {
+                      setSelectedOrderId(order.orderId || order.id);
+                      setSelectedOrderForPacking(order);
+                    }}
+                    className="bg-brand-navy-card border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer transition shadow-md group hover:bg-slate-900/60"
+                  >
+                    {/* Customer/Shop Info */}
+                    <div className="flex items-center gap-3 min-w-[240px]">
+                      <span className="text-[11px] font-black text-slate-300 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-md uppercase tracking-wider">
+                        {city}
+                      </span>
+                      <div>
+                        <h4 className="font-extrabold text-sm sm:text-base text-white group-hover:text-amber-400 transition">
+                          {shopName}
+                        </h4>
+                        <div className="text-xs font-semibold text-slate-400 mt-0.5">
+                          {orderNum} • {itemCount} items
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Department Strips */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {presentDepts.map((deptKey) => {
+                        const deptDone = isDepartmentDone(order, deptKey);
+                        const label = deptKey === 'imitation' ? 'Imitation Jewelry' :
+                                      deptKey === 'cosmetics' ? 'Cosmetics' : 'Hair Accessories';
+                        return (
+                          <span
+                            key={deptKey}
+                            className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition ${
+                              deptDone
+                                ? 'bg-emerald-600 text-white shadow-sm border border-emerald-500'
+                                : 'bg-slate-800/80 text-slate-400 border border-slate-700/60'
+                            }`}
+                          >
+                            {deptDone && <CheckCircle size={12} className="text-white" />}
+                            {label}
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    {/* Order Status Badge & Chevron */}
+                    <div className="flex items-center gap-3 self-end md:self-center">
+                      <span
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider ${
+                          statusState === 'DONE'
+                            ? 'bg-emerald-500 text-slate-950 shadow'
+                            : statusState === 'IN_PROGRESS'
+                            ? 'bg-amber-500 text-slate-950 font-black shadow animate-pulse'
+                            : 'bg-slate-900 border border-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {statusState === 'IN_PROGRESS' ? 'IN PROGRESS' : statusState}
+                      </span>
+                      <ChevronRight size={18} className="text-slate-600 group-hover:text-amber-400 transition" />
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
-
         </div>
-
-        {/* Workspace Mode Switcher & Quick Utilities */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setWorkspaceMode('packing')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                workspaceMode === 'packing' ? 'bg-purple-600 text-white shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
-              }`}
-            >
-              <ClipboardList size={14} /> Order Packing Workspace
-            </button>
-            <button
-              onClick={() => setWorkspaceMode('displayOrder')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                workspaceMode === 'displayOrder' ? 'bg-amber-500 text-slate-950 font-black shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
-              }`}
-            >
-              <SlidersHorizontal size={14} /> Display Order
-            </button>
-            <button
-              onClick={() => setWorkspaceMode('customers')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                workspaceMode === 'customers' ? 'bg-blue-600 text-white font-black shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
-              }`}
-            >
-              <Users size={14} /> Customers Directory
-            </button>
-            <button
-              onClick={() => setWorkspaceMode('databaseCleaner')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                workspaceMode === 'databaseCleaner' ? 'bg-red-600 text-white font-black shadow' : 'bg-slate-900 text-slate-400 hover:text-white'
-              }`}
-            >
-              <Database size={14} /> Clean Database
-            </button>
-          </div>
-
-          {/* Quick Clean Database Utility Button */}
-          <button
-            onClick={handleQuickCleanDatabase}
-            disabled={isQuickCleaning}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/30 text-red-400 hover:text-red-300 border border-red-500/30 rounded-lg text-xs font-bold transition disabled:opacity-50 ml-auto"
-            title="Scan & prune orphaned orders and empty carts with confirmation"
-          >
-            <Trash2 size={13} className={isQuickCleaning ? 'animate-spin' : ''} />
-            <span>{isQuickCleaning ? 'Cleaning...' : 'Quick Clean DB'}</span>
-          </button>
-        </div>
-
-      </div>
-
-      {/* BODY CONTENT */}
-      {workspaceMode === 'displayOrder' ? (
+      ) : workspaceMode === 'displayOrder' ? (
         <div className="flex-1 overflow-hidden">
           <DisplayOrderManager />
         </div>
@@ -571,14 +927,22 @@ export function StaffOrderManagement() {
           {/* LEFT SIDE: ORDER PHOTO GALLERY (lg:col-span-7) */}
           <div className="lg:col-span-7 flex flex-col overflow-hidden border-b lg:border-b-0 lg:border-r border-brand-navy-border h-1/2 lg:h-full p-3 sm:p-4 bg-slate-950/40">
             <div className="flex items-center justify-between mb-2.5 flex-shrink-0">
-              <h3 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
-                <Store size={14} className="text-purple-400" />
-                Items to Pack ({filteredOrderItems.length})
-              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setWorkspaceMode('manageOrders')}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1 transition"
+                >
+                  ← Back to Orders List
+                </button>
+                <h3 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-1.5">
+                  <Store size={14} className="text-purple-400" />
+                  Items to Pack ({designsCount} Designs · {totalPieces} Pcs)
+                </h3>
+              </div>
               <span className="text-[10px] text-slate-400">Tap photo to verify full resolution</span>
             </div>
 
-            {filteredOrderItems.length === 0 ? (
+            {groupedOrderProducts.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-600">
                 <FolderOpen size={36} className="text-slate-700 mb-2" />
                 <p className="text-xs font-bold">No matching items in this order</p>
@@ -586,14 +950,20 @@ export function StaffOrderManagement() {
               </div>
             ) : (
               <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3 pr-1 scrollbar-thin">
-                {filteredOrderItems.map((item, idx) => (
+                {groupedOrderProducts.map((item, idx) => (
                   <div 
                     key={idx}
                     className="bg-brand-navy-card border border-slate-800 rounded-xl overflow-hidden flex flex-col hover:border-slate-700 transition"
                   >
                     {/* Item Image (Tap to open full modal) */}
                     <div 
-                      onClick={() => setSelectedPhotoDetail(item)}
+                      onClick={() => setSelectedPhotoDetail({
+                        imageUri: item.imageUri,
+                        photoCode: item.photoCode,
+                        variant: item.shadesLine,
+                        quantity: item.totalPcs,
+                        subCategoryName: item.subCategoryName
+                      })}
                       className="relative aspect-video bg-black cursor-pointer overflow-hidden group border-b border-slate-900"
                     >
                       <img 
@@ -602,12 +972,12 @@ export function StaffOrderManagement() {
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover group-hover:scale-105 transition duration-200"
                       />
-                      <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
-                        <span className="text-[9px] font-mono font-bold text-black bg-white px-1.5 py-0.5 rounded shadow">
+                      <div className="absolute top-1.5 left-1.5 flex flex-col gap-1 max-w-[90%]">
+                        <span className="text-[9px] font-mono font-bold text-black bg-white px-1.5 py-0.5 rounded shadow w-fit">
                           {item.photoCode}
                         </span>
-                        <span className="text-[9px] font-bold text-black bg-brand-gold px-1.5 py-0.5 rounded shadow">
-                          Opt {item.variant}
+                        <span className="text-[9px] font-bold text-black bg-brand-gold px-1.5 py-0.5 rounded shadow truncate">
+                          {item.shadesLine}
                         </span>
                       </div>
                     </div>
@@ -617,10 +987,13 @@ export function StaffOrderManagement() {
                       <div className="text-[10px] text-slate-400 truncate leading-tight font-medium">
                         {item.subCategoryName || 'General Item'}
                       </div>
+                      <div className="text-[10px] text-amber-200 font-mono font-bold truncate">
+                        {item.shadesLine}
+                      </div>
                       <div className="flex items-center justify-between border-t border-slate-800/60 pt-1.5">
-                        <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Pack Qty:</span>
+                        <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Pcs:</span>
                         <span className="text-xs font-black text-amber-300 font-mono bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/20">
-                          {item.quantity} pcs
+                          {item.totalPcs} pcs
                         </span>
                       </div>
                     </div>
@@ -703,15 +1076,15 @@ export function StaffOrderManagement() {
                   ) : (
                     <button
                       onClick={() => handleMarkDepartmentDone(activeOrder, 'imitation')}
-                      disabled={staffDept !== 'imitation'}
+                      disabled={deptFilter !== 'all' && deptFilter !== 'imitation'}
                       className={`text-[10px] font-extrabold py-1.5 rounded-lg border text-center transition ${
-                        staffDept === 'imitation'
+                        deptFilter === 'all' || deptFilter === 'imitation'
                           ? 'bg-purple-600 hover:bg-purple-500 text-white border-purple-400/40 cursor-pointer active:scale-95'
                           : 'bg-slate-900/60 text-slate-500 border-slate-800 cursor-not-allowed'
                       }`}
-                      title={staffDept !== 'imitation' ? 'Only Imitation Duty can update this section' : 'Mark section done'}
+                      title={deptFilter !== 'all' && deptFilter !== 'imitation' ? 'Filter Dept to Imitation to pack' : 'Mark section done'}
                     >
-                      {staffDept === 'imitation' ? 'Pack Done' : 'Pending'}
+                      Pack Done
                     </button>
                   )}
                 </div>
@@ -727,15 +1100,15 @@ export function StaffOrderManagement() {
                   ) : (
                     <button
                       onClick={() => handleMarkDepartmentDone(activeOrder, 'cosmetics')}
-                      disabled={staffDept !== 'cosmetics'}
+                      disabled={deptFilter !== 'all' && deptFilter !== 'cosmetics'}
                       className={`text-[10px] font-extrabold py-1.5 rounded-lg border text-center transition ${
-                        staffDept === 'cosmetics'
+                        deptFilter === 'all' || deptFilter === 'cosmetics'
                           ? 'bg-purple-600 hover:bg-purple-500 text-white border-purple-400/40 cursor-pointer active:scale-95'
                           : 'bg-slate-900/60 text-slate-500 border-slate-800 cursor-not-allowed'
                       }`}
-                      title={staffDept !== 'cosmetics' ? 'Only Cosmetics Duty can update this section' : 'Mark section done'}
+                      title={deptFilter !== 'all' && deptFilter !== 'cosmetics' ? 'Filter Dept to Cosmetics to pack' : 'Mark section done'}
                     >
-                      {staffDept === 'cosmetics' ? 'Pack Done' : 'Pending'}
+                      Pack Done
                     </button>
                   )}
                 </div>
@@ -751,15 +1124,15 @@ export function StaffOrderManagement() {
                   ) : (
                     <button
                       onClick={() => handleMarkDepartmentDone(activeOrder, 'hair')}
-                      disabled={staffDept !== 'hair'}
+                      disabled={deptFilter !== 'all' && deptFilter !== 'hair'}
                       className={`text-[10px] font-extrabold py-1.5 rounded-lg border text-center transition ${
-                        staffDept === 'hair'
+                        deptFilter === 'all' || deptFilter === 'hair'
                           ? 'bg-purple-600 hover:bg-purple-500 text-white border-purple-400/40 cursor-pointer active:scale-95'
                           : 'bg-slate-900/60 text-slate-500 border-slate-800 cursor-not-allowed'
                       }`}
-                      title={staffDept !== 'hair' ? 'Only Hair Accessories Duty can update this section' : 'Mark section done'}
+                      title={deptFilter !== 'all' && deptFilter !== 'hair' ? 'Filter Dept to Hair Acc to pack' : 'Mark section done'}
                     >
-                      {staffDept === 'hair' ? 'Pack Done' : 'Pending'}
+                      Pack Done
                     </button>
                   )}
                 </div>
