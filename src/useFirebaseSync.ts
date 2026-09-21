@@ -101,6 +101,12 @@ export function useFirebaseSync() {
 
     function normalizePhoto(doc: any): CatalogPhoto {
       const data = doc.data() as any;
+      let parsedVariants = data.variants;
+      if (typeof parsedVariants === 'string') {
+        try {
+          parsedVariants = JSON.parse(parsedVariants);
+        } catch {}
+      }
       return {
         id: data.id || doc.id,
         categoryId: data.categoryId || data.category || '',
@@ -119,7 +125,7 @@ export function useFirebaseSync() {
         orderIndex: typeof data.orderIndex === 'number' ? data.orderIndex : (typeof data.sortOrder === 'number' ? data.sortOrder : 0),
         description: data.description || '',
         // Dynamic fields
-        variants: data.variants || undefined,
+        variants: Array.isArray(parsedVariants) ? parsedVariants : undefined,
         aLabel: data.aLabel || undefined,
         bLabel: data.bLabel || undefined,
         cLabel: data.cLabel || undefined,

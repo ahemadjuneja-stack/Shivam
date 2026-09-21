@@ -61,6 +61,8 @@ interface AppState {
   isCartOpen: boolean;
   orderNote: string;
   orderVoiceNote: string | null;
+  isRecordingVoice: boolean;
+  stopVoiceRecordingFn: (() => void) | null;
   lastReadTimestamp: number;
 
   // Actions
@@ -71,6 +73,8 @@ interface AppState {
   setIsCartOpen: (open: boolean) => void;
   setOrderNote: (note: string) => void;
   setOrderVoiceNote: (uri: string | null) => void;
+  setIsRecordingVoice: (isRecording: boolean) => void;
+  setStopVoiceRecordingFn: (fn: (() => void) | null) => void;
   markMessagesAsRead: () => void;
 
   addToCart: (item: OrderCartItem) => void;
@@ -130,11 +134,15 @@ export const useAppStore = create<AppState>()(
       isCartOpen: false,
       orderNote: '',
       orderVoiceNote: null,
+      isRecordingVoice: false,
+      stopVoiceRecordingFn: null,
       lastReadTimestamp: Date.now(),
 
       setShowroomScreenMode: (mode) => set({ showroomScreenMode: mode }),
       setOrderNote: (note) => set({ orderNote: note }),
       setOrderVoiceNote: (uri) => set({ orderVoiceNote: uri }),
+      setIsRecordingVoice: (isRecording) => set({ isRecordingVoice: isRecording }),
+      setStopVoiceRecordingFn: (fn) => set({ stopVoiceRecordingFn: fn }),
       markMessagesAsRead: () => {
         const custId = get().currentCustomer?.customerId || get().currentCustomer?.customerCode;
         if (custId) {
@@ -319,9 +327,34 @@ export const useAppStore = create<AppState>()(
         const orderIdNumber = generateOrderId();
         const custId = state.currentCustomer.customerId || state.currentCustomer.customerCode || 'CUST-GUEST';
 
+        // Check if recording is currently in progress
+        const wasRecording = get().isRecordingVoice;
+        if (wasRecording) {
+          const stopFn = get().stopVoiceRecordingFn;
+          if (stopFn) {
+            try {
+              stopFn();
+            } catch (err) {
+              console.error('Error stopping voice recording:', err);
+            }
+          }
+          // Await up to 5 seconds for recorder onstop event to finish saving audio Blob into orderVoiceNote
+          const startWait = Date.now();
+          while (get().isRecordingVoice && Date.now() - startWait < 5000) {
+            await new Promise((res) => setTimeout(res, 100));
+          }
+        }
+
+        const voiceNoteToUpload = get().orderVoiceNote;
+
+        // If recording was in progress but stopping/saving failed, show error and cancel order
+        if (wasRecording && !voiceNoteToUpload) {
+          alert("Voice note could not be saved. Please try again.");
+          return false;
+        }
+
         // Await voice note upload if exists to resolve getDownloadURL before setDoc
         let uploadedVoiceUrl = '';
-        const voiceNoteToUpload = state.orderVoiceNote;
         if (voiceNoteToUpload) {
           try {
             uploadedVoiceUrl = await uploadMediaToStorage(voiceNoteToUpload, 'voice_notes', `order_voice_${orderIdNumber}`);

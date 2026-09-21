@@ -32,7 +32,7 @@ import { useFirebaseSync } from './useFirebaseSync';
 import { Customer } from './types';
 
 function VoiceRecorder() {
-  const { orderVoiceNote, setOrderVoiceNote } = useAppStore();
+  const { orderVoiceNote, setOrderVoiceNote, setIsRecordingVoice, setStopVoiceRecordingFn } = useAppStore();
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [micNotice, setMicNotice] = useState<string | null>(null);
@@ -40,8 +40,18 @@ function VoiceRecorder() {
   const audioChunks = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    setStopVoiceRecordingFn(() => {
+      stopRecording();
+    });
+    return () => {
+      setStopVoiceRecordingFn(null);
+    };
+  }, []);
+
   const startRecording = async () => {
     setMicNotice(null);
+    setOrderVoiceNote(null);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setMicNotice("Microphone recording is not supported in this browser. Please use text notes.");
@@ -57,17 +67,29 @@ function VoiceRecorder() {
       };
 
       mediaRecorder.current.onstop = () => {
-        const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = () => {
-          setOrderVoiceNote(reader.result as string);
-        };
+        if (audioChunks.current.length > 0) {
+          const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' });
+          if (audioBlob.size > 0) {
+            const reader = new FileReader();
+            reader.readAsDataURL(audioBlob);
+            reader.onloadend = () => {
+              setOrderVoiceNote(reader.result as string);
+              setIsRecordingVoice(false);
+            };
+          } else {
+            setOrderVoiceNote(null);
+            setIsRecordingVoice(false);
+          }
+        } else {
+          setOrderVoiceNote(null);
+          setIsRecordingVoice(false);
+        }
         stream.getTracks().forEach(track => track.stop());
       };
 
       mediaRecorder.current.start();
       setIsRecording(true);
+      setIsRecordingVoice(true);
       setRecordingTime(0);
 
       timerRef.current = window.setInterval(() => {
@@ -80,6 +102,7 @@ function VoiceRecorder() {
         });
       }, 1000);
     } catch (err: any) {
+      setIsRecordingVoice(false);
       if (err?.name === 'NotFoundError' || err?.message?.includes('Requested device not found') || err?.message?.includes('not found')) {
         setMicNotice("No microphone found on this device. You can type instructions in the Order Note box above.");
       } else if (err?.name === 'NotAllowedError' || err?.message?.includes('sandboxed') || err?.message?.includes('Permission denied') || err?.name === 'SecurityError') {

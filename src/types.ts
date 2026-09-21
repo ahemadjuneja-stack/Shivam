@@ -66,29 +66,59 @@ export interface ProductVariant {
 }
 
 export function getPhotoVariants(photo: CatalogPhoto): ProductVariant[] {
-  const baseDefaultQty = typeof photo.defaultQuantity === 'number' && photo.defaultQuantity >= 0 
-    ? photo.defaultQuantity 
-    : 6;
-  
   // 1. If photo.variants is an array of objects
   if (Array.isArray(photo.variants) && photo.variants.length > 0) {
     return photo.variants.map((v: any, index: number) => {
       const keys = ['A', 'B', 'C', 'D'];
       const defaultKey = keys[index] || `V${index + 1}`;
+
+      // Check variant-specific min/default quantity fields
+      let vQty: number | undefined = undefined;
+      if (typeof v.defaultQuantity === 'number' && v.defaultQuantity >= 0) {
+        vQty = v.defaultQuantity;
+      } else if (typeof v.minQty === 'number' && v.minQty >= 0) {
+        vQty = v.minQty;
+      } else if (typeof v.min === 'number' && v.min >= 0) {
+        vQty = v.min;
+      } else if (typeof v.minimumQuantity === 'number' && v.minimumQuantity >= 0) {
+        vQty = v.minimumQuantity;
+      } else if (typeof v.qty === 'number' && v.qty >= 0) {
+        vQty = v.qty;
+      } else if (typeof v.packSize === 'number' && v.packSize >= 0) {
+        vQty = v.packSize;
+      }
+
+      const finalQty = vQty !== undefined ? vQty : 6;
+
+      let vAvail = true;
+      if (v.isAvailable !== undefined) {
+        vAvail = !!v.isAvailable;
+      } else if (v.available !== undefined) {
+        vAvail = !!v.available;
+      } else if (v.inStock !== undefined) {
+        vAvail = !!v.inStock;
+      }
+
+      if (finalQty === 0) {
+        vAvail = false;
+      }
+
       return {
         key: v.key || defaultKey,
         label: v.label || v.name || defaultKey,
-        isAvailable: v.isAvailable !== undefined ? v.isAvailable : true,
-        defaultQuantity: typeof v.defaultQuantity === 'number' && v.defaultQuantity >= 0 
-          ? v.defaultQuantity 
-          : baseDefaultQty
+        isAvailable: vAvail,
+        defaultQuantity: finalQty
       };
     });
   }
 
   // 2. Generate from standard properties (A, B, C, D)
+  const baseDefaultQty = typeof photo.defaultQuantity === 'number' && photo.defaultQuantity > 0 
+    ? photo.defaultQuantity 
+    : 6;
+
   const variantsList: ProductVariant[] = [];
-  const count = typeof photo.itemCount === 'number' ? photo.itemCount : 4;
+  const count = typeof photo.itemCount === 'number' && photo.itemCount > 0 ? photo.itemCount : 4;
   const options = ['A', 'B', 'C', 'D'];
 
   for (let i = 0; i < count; i++) {
@@ -97,16 +127,21 @@ export function getPhotoVariants(photo: CatalogPhoto): ProductVariant[] {
     const labelKey = `${opt.toLowerCase()}Label` as keyof CatalogPhoto;
     const qtyKey = `${opt.toLowerCase()}DefaultQuantity` as keyof CatalogPhoto;
 
-    const isAvailable = photo[isAvailKey] !== undefined ? !!photo[isAvailKey] : true;
-    const label = (photo[labelKey] as string) || opt;
-    const defaultQuantity = typeof photo[qtyKey] === 'number' && (photo[qtyKey] as number) >= 0 
-      ? (photo[qtyKey] as number) 
+    const qtyVal = photo[qtyKey] as number | undefined;
+    const defaultQuantity = typeof qtyVal === 'number' && qtyVal >= 0 
+      ? qtyVal 
       : baseDefaultQty;
+
+    const isAvailable = photo[isAvailKey] !== undefined 
+      ? !!photo[isAvailKey] 
+      : (defaultQuantity > 0);
+
+    const label = (photo[labelKey] as string) || opt;
 
     variantsList.push({
       key: opt,
       label,
-      isAvailable,
+      isAvailable: isAvailable && defaultQuantity > 0,
       defaultQuantity
     });
   }
