@@ -328,6 +328,8 @@ export const useAppStore = create<AppState>()(
             console.log('Voice note uploaded successfully, URL:', uploadedVoiceUrl);
           } catch (uploadErr) {
             console.warn('Voice note upload error:', uploadErr);
+            alert("Voice note upload failed. Please try again.");
+            return false;
           }
         }
 

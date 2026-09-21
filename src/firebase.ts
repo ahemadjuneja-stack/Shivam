@@ -93,13 +93,8 @@ export async function uploadMediaToStorage(
     setTimeout(() => reject(new Error('Cloud Storage upload timed out after 20s')), 20000);
   });
 
-  try {
-    const downloadUrl = await Promise.race([uploadTask(), timeoutPromise]);
-    return downloadUrl;
-  } catch (uploadErr) {
-    console.warn('[Storage] Upload failed or timed out (max 20s), continuing with fallback:', uploadErr);
-    return '';
-  }
+  const downloadUrl = await Promise.race([uploadTask(), timeoutPromise]);
+  return downloadUrl;
 }
 
 // Custom Database ID
