@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Volume2, 
   VolumeX, 
@@ -15,6 +15,47 @@ interface HomeVideoSliderProps {
   videos: (CatalogPhoto | ShowroomVideo)[];
   onSelectPhoto?: (photo: CatalogPhoto | ShowroomVideo) => void;
 }
+
+// Helper functions for field-name compatibility across both ShowroomVideo & CatalogPhoto models
+const getVideoUrl = (item: any): string => {
+  return item?.videoUri || item?.videoUrl || '';
+};
+
+const getPosterUrl = (item: any): string => {
+  return item?.imageUri || item?.posterUrl || item?.poster || '';
+};
+
+const getTitle = (item: any): string => {
+  return item?.title || item?.photoCode || item?.name || '';
+};
+
+const getSortOrder = (item: any): number => {
+  if (item?.sortOrder !== undefined && item?.sortOrder !== null && item?.sortOrder !== '') {
+    const num = Number(item.sortOrder);
+    if (!isNaN(num)) return num;
+  }
+  if (item?.orderIndex !== undefined && item?.orderIndex !== null && item?.orderIndex !== '') {
+    const num = Number(item.orderIndex);
+    if (!isNaN(num)) return num;
+  }
+  return 99999;
+};
+
+const getQuantity = (item: any): number | undefined => {
+  if (item?.quantity !== undefined && item?.quantity !== null && item?.quantity !== '') {
+    const num = Number(item.quantity);
+    if (!isNaN(num)) return num;
+  }
+  if (item?.qty !== undefined && item?.qty !== null && item?.qty !== '') {
+    const num = Number(item.qty);
+    if (!isNaN(num)) return num;
+  }
+  if (item?.defaultQuantity !== undefined && item?.defaultQuantity !== null && item?.defaultQuantity !== '') {
+    const num = Number(item.defaultQuantity);
+    if (!isNaN(num)) return num;
+  }
+  return undefined;
+};
 
 export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -33,7 +74,15 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
   const isDragging = useRef(false);
   const mouseStartX = useRef<number | null>(null);
 
-  const totalVideos = videos.length;
+  // Filter, sort by sortOrder ascending, and limit to a maximum of 4 videos
+  const filteredVideos = useMemo(() => {
+    return [...videos]
+      .filter(v => !!getVideoUrl(v))
+      .sort((a, b) => getSortOrder(a) - getSortOrder(b))
+      .slice(0, 4);
+  }, [videos]);
+
+  const totalVideos = filteredVideos.length;
 
   // Safe navigation
   const goToNext = useCallback(() => {
@@ -118,31 +167,37 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
 
   // Play active video automatically on mount and when slide index changes
   useEffect(() => {
-    videoRefs.current.forEach((v, idx) => {
-      if (!v) return;
-      if (idx === currentIndex) {
-        v.muted = isMuted;
-        const playPromise = v.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => setIsPlaying(true))
-            .catch((err) => {
-              console.warn('Autoplay prevented or interrupted:', err);
-              // In case browser blocked audio, ensure muted
-              if (!v.muted) {
-                v.muted = true;
-                setIsMuted(true);
-                v.play().catch(() => {});
-              }
-            });
+    const timer = setTimeout(() => {
+      videoRefs.current.forEach((v, idx) => {
+        if (!v) return;
+        if (idx === currentIndex) {
+          v.muted = isMuted;
+          if (v.src) {
+            const playPromise = v.play();
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => setIsPlaying(true))
+                .catch((err) => {
+                  console.warn('Autoplay prevented or interrupted:', err);
+                  // In case browser blocked audio, ensure muted
+                  if (!v.muted) {
+                    v.muted = true;
+                    setIsMuted(true);
+                    v.play().catch(() => {});
+                  }
+                });
+            }
+          }
+        } else {
+          try {
+            v.pause();
+            v.currentTime = 0;
+          } catch (e) {}
         }
-      } else {
-        v.pause();
-        v.currentTime = 0;
-      }
-    });
-    setVideoProgress(0);
-  }, [currentIndex, isMuted]);
+      });
+    }, 50); // Small delay to let browser bind the src before playing
+    return () => clearTimeout(timer);
+  }, [currentIndex, isMuted, filteredVideos]);
 
   // Handle Mute / Unmute toggle
   const toggleMute = (e: React.MouseEvent) => {
@@ -194,7 +249,9 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
     );
   }
 
-  const currentPhoto = videos[currentIndex];
+  const currentPhoto = filteredVideos[currentIndex];
+  const qty = currentPhoto ? getQuantity(currentPhoto) : undefined;
+  const hasOrderOption = qty !== undefined && !isNaN(qty) && qty >= 1;
 
   return (
     <div 
@@ -220,8 +277,11 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
           transition: isDragging.current ? 'none' : 'transform 400ms cubic-bezier(0.25, 1, 0.5, 1)'
         }}
       >
-        {videos.map((photo, index) => {
+        {filteredVideos.map((photo, index) => {
           const isCurrent = index === currentIndex;
+          const videoUrl = getVideoUrl(photo);
+          const posterUrl = getPosterUrl(photo);
+          const title = getTitle(photo);
 
           return (
             <div 
@@ -229,14 +289,14 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
               className="relative w-full h-full flex-shrink-0 bg-black flex items-center justify-center overflow-hidden"
               style={{ width: '100%' }}
             >
-              {photo.videoUri ? (
+              {videoUrl ? (
                 <video
                   ref={(el) => {
                     videoRefs.current[index] = el;
                   }}
-                  src={photo.videoUri}
-                  poster={photo.imageUri}
-                  preload={isCurrent ? "metadata" : "none"}
+                  src={isCurrent ? videoUrl : undefined}
+                  poster={posterUrl}
+                  preload="metadata"
                   autoPlay={isCurrent}
                   playsInline
                   muted={isMuted}
@@ -248,8 +308,8 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
                 />
               ) : (
                 <img 
-                  src={photo.imageUri} 
-                  alt={photo.photoCode} 
+                  src={posterUrl} 
+                  alt={title} 
                   loading="lazy"
                   decoding="async"
                   className="w-full h-full object-contain"
@@ -262,7 +322,6 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
 
       {/* ----------------- TOP HEADER OVERLAYS ----------------- */}
       <div className="absolute top-0 inset-x-0 p-2.5 sm:p-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-center justify-between z-20 pointer-events-none">
-        {/* Active Product Badge (Removed as requested) */}
         <div className="flex items-center gap-2 pointer-events-auto">
         </div>
 
@@ -350,7 +409,7 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
           <div className="flex items-center gap-2">
             {/* Dots */}
             <div className="hidden xs:flex items-center gap-1 bg-black/40 backdrop-blur-sm px-2 py-1 rounded-full border border-white/10">
-              {videos.map((_, idx) => (
+              {filteredVideos.map((_, idx) => (
                 <button
                   key={idx}
                   onClick={(e) => {
@@ -368,7 +427,7 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
             </div>
 
             {/* Quick Order / Explore Button */}
-            {onSelectPhoto && currentPhoto && (
+            {onSelectPhoto && currentPhoto && hasOrderOption && (
               <button
                 type="button"
                 onClick={(e) => {

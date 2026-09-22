@@ -22,16 +22,56 @@ import { AudioMessagePlayer } from './AudioMessagePlayer';
 import { DisplayOrderManager } from './DisplayOrderManager';
 import { CustomerManager } from './CustomerManager';
 import { DatabaseCleanManager } from './DatabaseCleanManager';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { generateMessageId } from '../lib/idGenerator';
 import { db, COLLECTIONS } from '../firebase';
 import { uploadMediaToStorage } from '../services/storageService';
 
+// Module-level cached orders and load flag outside the component for instant re-visits
+let cachedOrders: WholesaleOrder[] = [];
+let hasLoadedOnce = false;
+
 export function StaffOrderManagement() {
   const currentCustomer = useAppStore(state => state.currentCustomer);
-  const orders = useAppStore(state => state.orders) as WholesaleOrder[];
+  const [localOrders, setLocalOrders] = useState<WholesaleOrder[]>(cachedOrders);
+  const [isLoading, setIsLoading] = useState(!hasLoadedOnce);
+  const orders = localOrders;
   const messages = useAppStore(state => state.messages) as ChatMessage[];
   const addMessage = useAppStore(state => state.addMessage);
+
+  // Subscribe to real-time orders updates using onSnapshot
+  useEffect(() => {
+    const ordersCol = collection(db, COLLECTIONS.ORDERS);
+    const q = query(ordersCol, orderBy('createdAt', 'desc'));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const fetched: WholesaleOrder[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          fetched.push({
+            id: docSnap.id,
+            ...data
+          } as WholesaleOrder);
+        });
+        cachedOrders = fetched;
+        hasLoadedOnce = true;
+        setLocalOrders(fetched);
+        setIsLoading(false);
+        // Sync to global store so other components have up-to-date orders
+        useAppStore.setState({ orders: fetched });
+      },
+      (error) => {
+        console.error('Error listening to orders snapshot:', error);
+        setIsLoading(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const [workspaceMode, setWorkspaceMode] = useState<'manageOrders' | 'packing' | 'displayOrder' | 'customers' | 'databaseCleaner'>('manageOrders');
   const [manageStatusFilter, setManageStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'done'>('pending');
@@ -820,7 +860,12 @@ export function StaffOrderManagement() {
 
           {/* Scrollable Order Row Cards List */}
           <div className="space-y-3 flex-1 overflow-y-auto max-h-[calc(100vh-220px)] pr-1 scrollbar-thin">
-            {displayedManageOrders.length === 0 ? (
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-2">
+                <div className="w-8 h-8 border-4 border-slate-800 border-t-amber-500 rounded-full animate-spin" />
+                <p className="text-xs font-bold text-slate-400">Loading orders...</p>
+              </div>
+            ) : displayedManageOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-2">
                 <FolderOpen size={36} className="text-slate-600" />
                 <p className="text-xs font-bold">No orders found matching the selected filters.</p>
@@ -912,6 +957,12 @@ export function StaffOrderManagement() {
       ) : workspaceMode === 'databaseCleaner' ? (
         <div className="flex-1 overflow-hidden">
           <DatabaseCleanManager />
+        </div>
+      ) : isLoading ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-500">
+          <div className="w-8 h-8 border-4 border-slate-800 border-t-amber-500 rounded-full animate-spin mb-3" />
+          <h3 className="font-bold text-base text-slate-300">Loading Orders...</h3>
+          <p className="text-xs text-slate-500 mt-1">Synchronizing with Firestore database...</p>
         </div>
       ) : !activeOrder ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-500">

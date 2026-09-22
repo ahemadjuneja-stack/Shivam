@@ -334,6 +334,20 @@ export async function batchUpdateCategoriesOrder(categories: CategoryItem[]): Pr
   }
 }
 
+export async function deleteSubCategoryFromFirebase(subCategoryId: string): Promise<void> {
+  const path = `${COLLECTIONS.SUBCATEGORIES}/${subCategoryId}`;
+  try {
+    const subRef = doc(db, COLLECTIONS.SUBCATEGORIES, subCategoryId);
+    await deleteDoc(subRef);
+
+    // After deleting from 'subCategories', also check the legacy lowercase 'subcategories' collection and delete any doc with the same id
+    const legacyRef = doc(db, COLLECTIONS.SUBCATEGORIES_LOWER, subCategoryId);
+    await deleteDoc(legacyRef).catch(() => {});
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 export async function deletePhotoFromFirebase(photoId: string, photoCode?: string): Promise<void> {
   const path = `${COLLECTIONS.PHOTOS}/${photoId}`;
   try {

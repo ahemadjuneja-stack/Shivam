@@ -28,6 +28,7 @@ import {
   deleteCommunityPostFromFirebase,
   syncCategoryToFirebase,
   syncSubCategoryToFirebase,
+  deleteSubCategoryFromFirebase,
   batchUpdateCategoriesOrder,
   batchUpdateSubCategoriesOrder,
   batchUpdatePhotosOrder,
@@ -170,6 +171,7 @@ interface AppState {
   updateOrderStatus: (orderId: string, department: 'imitation' | 'cosmetics' | 'hair', status: string) => void;
   addCategory: (category: CategoryItem) => void;
   addSubCategory: (subCategory: SubCategory) => void;
+  deleteSubCategory: (subCategoryId: string) => void;
   addPhoto: (photo: CatalogPhoto) => void;
   updatePhoto: (photoId: string, data: Partial<CatalogPhoto>) => void;
   deletePhoto: (photoId: string, photoCode?: string) => void;
@@ -701,19 +703,47 @@ export const useAppStore = create<AppState>()(
       },
 
       addCategory: (category) => {
+        const name = category.displayName?.trim();
+        const thumbnail = category.thumbnailUrl?.trim();
+        if (!name) {
+          alert("Name can't be empty");
+          return;
+        }
+        if (!thumbnail) {
+          alert("Thumbnail zaroori hai — pehle image upload karo");
+          return;
+        }
         const current = get().categories;
         const maxIndex = current.reduce((m, c) => Math.max(m, c.orderIndex ?? c.sortOrder ?? 0), -1);
-        const newCat = { ...category, orderIndex: maxIndex + 1, sortOrder: maxIndex + 2 };
+        const newCat = { ...category, displayName: name, thumbnailUrl: thumbnail, orderIndex: maxIndex + 1, sortOrder: maxIndex + 2 };
         syncCategoryToFirebase(newCat).catch((e) => console.error('Firebase sync error on addCategory:', e));
         set((state) => ({ categories: [...state.categories, newCat] }));
       },
 
       addSubCategory: (subCategory) => {
+        const name = subCategory.name?.trim();
+        const thumbnail = subCategory.thumbnailUrl?.trim();
+        if (!name) {
+          alert("Name can't be empty");
+          return;
+        }
+        if (!thumbnail) {
+          alert("Thumbnail zaroori hai — pehle image upload karo");
+          return;
+        }
         const current = get().subCategories;
         const maxIndex = current.reduce((m, s) => Math.max(m, s.orderIndex ?? s.sortOrder ?? 0), -1);
-        const newSub = { ...subCategory, orderIndex: maxIndex + 1, sortOrder: maxIndex + 2 };
+        const newSub = { ...subCategory, name: name, thumbnailUrl: thumbnail, orderIndex: maxIndex + 1, sortOrder: maxIndex + 2 };
         syncSubCategoryToFirebase(newSub).catch((e) => console.error('Firebase sync error on addSubCategory:', e));
         set((state) => ({ subCategories: [...state.subCategories, newSub] }));
+      },
+
+      deleteSubCategory: (subCategoryId) => {
+        deleteSubCategoryFromFirebase(subCategoryId).catch((e) => console.error('Firebase sync error on deleteSubCategory:', e));
+        set((state) => ({
+          subCategories: state.subCategories.filter(s => s.id !== subCategoryId),
+          activeSubCategoryId: state.activeSubCategoryId === subCategoryId ? '' : state.activeSubCategoryId
+        }));
       },
 
       addPhoto: (photo) => {

@@ -82,7 +82,9 @@ export function normalizePhotoDoc(docSnap: QueryDocumentSnapshot<DocumentData>):
 // Targeted Async Loaders
 export async function loadSubCategoriesForCategory(categoryId: string) {
   if (!categoryId) return;
-  useAppStore.setState({ isSubCategoriesLoading: true, syncError: null });
+  const existing = useAppStore.getState().subCategories.filter(s => s.categoryId === categoryId);
+  const hasNoData = existing.length === 0;
+  useAppStore.setState({ isSubCategoriesLoading: hasNoData, syncError: null });
   try {
     const q = query(
       collection(db, COLLECTIONS.SUBCATEGORIES),
@@ -129,7 +131,9 @@ export async function loadSubCategoriesForCategory(categoryId: string) {
 
 export async function loadPhotosForCategory(categoryId: string) {
   if (!categoryId) return;
-  useAppStore.setState({ isPhotosLoading: true, syncError: null });
+  const existing = useAppStore.getState().photos.filter(p => p.categoryId === categoryId);
+  const hasNoData = existing.length === 0;
+  useAppStore.setState({ isPhotosLoading: hasNoData, syncError: null });
   try {
     const qPhotos = query(
       collection(db, COLLECTIONS.PHOTOS),
@@ -181,7 +185,9 @@ export async function loadPhotosForCategory(categoryId: string) {
 
 export async function loadPhotosForSubCategory(subCategoryId: string) {
   if (!subCategoryId) return;
-  useAppStore.setState({ isPhotosLoading: true, syncError: null });
+  const existing = useAppStore.getState().photos.filter(p => p.subCategoryId === subCategoryId);
+  const hasNoData = existing.length === 0;
+  useAppStore.setState({ isPhotosLoading: hasNoData, syncError: null });
   try {
     const qPhotos = query(
       collection(db, COLLECTIONS.PHOTOS),
@@ -197,12 +203,23 @@ export async function loadPhotosForSubCategory(subCategoryId: string) {
       getDocs(qCatalogPhotosSubCategoryId).catch(() => null)
     ]);
 
-    if (!snapCatalogPhotos || snapCatalogPhotos.empty) {
+    const primaryReturnedZero = !snapCatalogPhotos || snapCatalogPhotos.empty;
+
+    if (primaryReturnedZero) {
       const qCatalogPhotosSubCategoryFallback = query(
         collection(db, COLLECTIONS.CATALOG_PHOTOS),
         where('subCategory', '==', subCategoryId)
       );
       snapCatalogPhotos = await getDocs(qCatalogPhotosSubCategoryFallback).catch(() => null);
+      if (snapCatalogPhotos && !snapCatalogPhotos.empty) {
+        const fallbackDocsCount = snapCatalogPhotos.size;
+        const fallbackSampleKeys = snapCatalogPhotos.docs.slice(0, 3).map(d => d.id);
+        console.warn(`[Slow Subcategory Warning] Primary 'subCategoryId' query returned 0 docs, but legacy 'subCategory' query returned results!`, {
+          subCategoryId,
+          fallbackDocsCount,
+          fallbackSampleKeys
+        });
+      }
     }
 
     const photoMap = new Map<string, CatalogPhoto>();
