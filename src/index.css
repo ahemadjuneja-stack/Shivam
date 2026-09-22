@@ -25,6 +25,16 @@
   }
 }
 
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Prevent mobile pull-to-refresh reload while keeping smooth scroll in all containers */
+* {
+  overscroll-behavior-y: contain;
+}
+
 body {
   background-color: var(--color-brand-navy-dark);
   color: #E2E8F0;

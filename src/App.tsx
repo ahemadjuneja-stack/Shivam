@@ -22,8 +22,8 @@ import {
   Store,
   ClipboardList
 } from 'lucide-react';
-import React, { useState, useRef, useEffect } from 'react';
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { doc, setDoc, updateDoc, getDoc, getDocs, collection, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db, COLLECTIONS, messaging, deleteCustomerWithCascade } from './firebase';
 import { getToken, onMessage } from 'firebase/messaging';
 import { ChatModal } from './components/ChatModal';
@@ -241,6 +241,116 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [networkOnline, setNetworkOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
   const [isDispatching, setIsDispatching] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const categories = useAppStore(state => state.categories);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  const isApprovedStatus = (status?: string) => {
+    const s = (status || '').toLowerCase().trim();
+    return s === 'approved' || s === 'verified';
+  };
+
+  const customerDocUnsubRef = useRef<(() => void) | null>(null);
+
+  const subscribeCustomerDoc = useCallback((docId: string) => {
+    if (customerDocUnsubRef.current) {
+      customerDocUnsubRef.current();
+      customerDocUnsubRef.current = null;
+    }
+    if (!docId) return;
+
+    try {
+      const custRef = doc(db, 'customers', docId);
+      customerDocUnsubRef.current = onSnapshot(
+        custRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data() as any;
+            const updatedCust: Customer = {
+              id: snapshot.id,
+              customerId: data.customerId || data.customerCode || snapshot.id,
+              customerCode: data.customerCode || data.customerId || snapshot.id,
+              shopName: data.shopName || '',
+              ownerName: data.ownerName || data.contactPerson || '',
+              phone: data.phone || data.mobileNumber || '',
+              city: data.city || data.cityName || '',
+              address: data.address || '',
+              contactPerson: data.ownerName || data.contactPerson || '',
+              mobileNumber: data.phone || data.mobileNumber || '',
+              cityName: data.city || data.cityName || '',
+              createdAt: data.createdAt || 0,
+              pin: data.pin || '1111',
+              status: data.status || 'Approved',
+              role: data.role || 'User',
+              allowedCategoryIds: data.allowedCategoryIds || ['all'],
+              allowedSubCategoryIds: data.allowedSubCategoryIds || ['all'],
+              isOnline: data.isOnline || false,
+              lastActive: data.lastActive || null,
+              location: data.location || null
+            };
+            setCurrentCustomer(updatedCust);
+          }
+        },
+        (err) => {
+          console.warn('[CustomerDoc] Listener error:', err);
+        }
+      );
+    } catch (err) {
+      console.warn('[CustomerDoc] Failed to subscribe:', err);
+    }
+  }, [setCurrentCustomer]);
+
+  useEffect(() => {
+    if (currentCustomer && !customerDocUnsubRef.current) {
+      const docId = currentCustomer.id || currentCustomer.customerId || currentCustomer.customerCode;
+      if (docId) {
+        subscribeCustomerDoc(docId);
+      }
+    }
+    return () => {
+      if (customerDocUnsubRef.current) {
+        customerDocUnsubRef.current();
+        customerDocUnsubRef.current = null;
+      }
+    };
+  }, [currentCustomer?.id, currentCustomer?.customerId, currentCustomer?.customerCode, subscribeCustomerDoc]);
+
+  const handleLogoutOrSwitch = useCallback(() => {
+    if (customerDocUnsubRef.current) {
+      customerDocUnsubRef.current();
+      customerDocUnsubRef.current = null;
+    }
+    setCurrentCustomer(null);
+    try {
+      const raw = localStorage.getItem('shivam-wholesale-session-v9');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.state) {
+          parsed.state.currentCustomer = null;
+          localStorage.setItem('shivam-wholesale-session-v9', JSON.stringify(parsed));
+        }
+      }
+    } catch (e) {
+      console.warn('[handleLogoutOrSwitch] localStorage clear error:', e);
+    }
+    setFormData(initialRegistrationFormData);
+    setLoginId('');
+    setLoginPin('');
+    setAuthError(null);
+    setAuthViewMode('login');
+    setModalMode('login');
+    setShowLogin(false);
+  }, [setCurrentCustomer]);
+
+  useEffect(() => {
+    if (categories.length > 0) {
+      const timer = setTimeout(() => {
+        setIsInitializing(false);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [categories.length]);
 
   useEffect(() => {
     const handleOnline = () => setNetworkOnline(true);
@@ -461,38 +571,184 @@ function AppShell({ children }: { children: React.ReactNode }) {
     setShowLogin(true);
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const query = loginId.trim().toLowerCase();
-    const pin = loginPin.trim();
-
-    if (!query) {
+    const rawId = loginId.trim();
+    if (!rawId) {
       setAuthError('Please enter your Customer User ID.');
       return;
     }
-    if (!pin) {
+
+    const isModalLogin = showLogin;
+    const pin = loginPin.trim();
+    if (!isModalLogin && !pin) {
       setAuthError('Please enter your Security PIN.');
       return;
     }
 
-    const cust = customers.find(c => 
-      c?.customerId?.toLowerCase() === query || 
-      c?.customerCode?.toLowerCase() === query
-    );
+    setAuthError(null);
+    setIsLoggingIn(true);
 
-    if (cust) {
-      const expectedPin = cust.pin || '1111';
-      if (expectedPin === pin) {
-        setCurrentCustomer(cust);
-        setAuthError(null);
-        setLoginId('');
-        setLoginPin('');
-        setShowLogin(false);
-      } else {
-        setAuthError('Invalid Security PIN. Default PIN is 1111.');
+    try {
+      // CHANGE A: Robust Firestore lookup directly in Firestore
+      // 1. Try getDoc(doc(db, 'customers', enteredId.trim()))
+      // 2. ALSO run getDocs on query(collection(db,'customers'), where('customerId','==',id)) and where('customerCode','==',id)
+      // 3. Merge all results. If ANY doc matches -> login succeeds using that doc's data.
+      let matchedDocSnap: any = null;
+
+      // 1. Direct document ID lookup
+      try {
+        const directDoc = await getDoc(doc(db, 'customers', rawId));
+        if (directDoc.exists()) {
+          matchedDocSnap = directDoc;
+        }
+      } catch (err) {
+        console.warn('[handleLogin] Direct doc lookup failed:', err);
       }
-    } else {
-      setAuthError('Customer User ID not found. Register your shop below.');
+
+      // 2. Query customerId == rawId
+      if (!matchedDocSnap) {
+        try {
+          const qId = query(collection(db, 'customers'), where('customerId', '==', rawId));
+          const snapId = await getDocs(qId);
+          if (!snapId.empty) {
+            matchedDocSnap = snapId.docs[0];
+          }
+        } catch (err) {
+          console.warn('[handleLogin] customerId query failed:', err);
+        }
+      }
+
+      // 3. Query customerCode == rawId
+      if (!matchedDocSnap) {
+        try {
+          const qCode = query(collection(db, 'customers'), where('customerCode', '==', rawId));
+          const snapCode = await getDocs(qCode);
+          if (!snapCode.empty) {
+            matchedDocSnap = snapCode.docs[0];
+          }
+        } catch (err) {
+          console.warn('[handleLogin] customerCode query failed:', err);
+        }
+      }
+
+      // 4. Case-insensitive uppercase / lowercase fallback check if different from rawId
+      if (!matchedDocSnap && rawId.toUpperCase() !== rawId) {
+        const upper = rawId.toUpperCase();
+        try {
+          const directUpper = await getDoc(doc(db, 'customers', upper));
+          if (directUpper.exists()) {
+            matchedDocSnap = directUpper;
+          } else {
+            const qIdUpper = query(collection(db, 'customers'), where('customerId', '==', upper));
+            const snapIdUpper = await getDocs(qIdUpper);
+            if (!snapIdUpper.empty) {
+              matchedDocSnap = snapIdUpper.docs[0];
+            } else {
+              const qCodeUpper = query(collection(db, 'customers'), where('customerCode', '==', upper));
+              const snapCodeUpper = await getDocs(qCodeUpper);
+              if (!snapCodeUpper.empty) {
+                matchedDocSnap = snapCodeUpper.docs[0];
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[handleLogin] Case insensitive lookup failed:', err);
+        }
+      }
+
+      // 5. Offline fallback check from local store customers
+      if (!matchedDocSnap) {
+        const localMatch = customers.find(c => 
+          c?.customerId?.toLowerCase() === rawId.toLowerCase() || 
+          c?.customerCode?.toLowerCase() === rawId.toLowerCase() ||
+          c?.id?.toLowerCase() === rawId.toLowerCase()
+        );
+        if (localMatch) {
+          if (pin) {
+            const expectedPin = localMatch.pin || '1111';
+            if (expectedPin !== pin) {
+              setAuthError('Invalid Security PIN. Default PIN is 1111.');
+              return;
+            }
+          }
+
+          if (!isApprovedStatus(localMatch.status)) {
+            setAuthError('Aapka account approval ke liye pending hai');
+            return;
+          }
+
+          setCurrentCustomer(localMatch);
+          subscribeCustomerDoc(localMatch.id || localMatch.customerId || localMatch.customerCode);
+          setAuthError(null);
+          setLoginId('');
+          setLoginPin('');
+          setShowLogin(false);
+          return;
+        }
+      }
+
+      if (!matchedDocSnap || !matchedDocSnap.exists()) {
+        setAuthError('Customer User ID not found. Register your shop below.');
+        return;
+      }
+
+      const customerData = matchedDocSnap.data() as any;
+      const docId = matchedDocSnap.id;
+
+      // Validate PIN if provided
+      if (pin) {
+        const expectedPin = customerData.pin || '1111';
+        if (expectedPin !== pin) {
+          setAuthError('Invalid Security PIN. Default PIN is 1111.');
+          return;
+        }
+      }
+
+      // CHANGE B: Status normalization
+      // Accept customers whose status is any of: 'Approved', 'approved', 'VERIFIED', 'Verified', 'verified'
+      // If status is 'PENDING' (or missing): show "Aapka account approval ke liye pending hai"
+      // Do not require isVerified === true if status is VERIFIED/Approved.
+      if (!isApprovedStatus(customerData.status)) {
+        setAuthError('Aapka account approval ke liye pending hai');
+        return;
+      }
+
+      const cust: Customer = {
+        id: docId,
+        customerId: customerData.customerId || customerData.customerCode || docId,
+        customerCode: customerData.customerCode || customerData.customerId || docId,
+        shopName: customerData.shopName || '',
+        ownerName: customerData.ownerName || customerData.contactPerson || '',
+        phone: customerData.phone || customerData.mobileNumber || '',
+        city: customerData.city || customerData.cityName || '',
+        address: customerData.address || '',
+        contactPerson: customerData.ownerName || customerData.contactPerson || '',
+        mobileNumber: customerData.phone || customerData.mobileNumber || '',
+        cityName: customerData.city || customerData.cityName || '',
+        createdAt: customerData.createdAt || 0,
+        pin: customerData.pin || '1111',
+        status: customerData.status || 'Approved',
+        role: customerData.role || 'User',
+        allowedCategoryIds: customerData.allowedCategoryIds || ['all'],
+        allowedSubCategoryIds: customerData.allowedSubCategoryIds || ['all'],
+        isOnline: customerData.isOnline || false,
+        lastActive: customerData.lastActive || null,
+        location: customerData.location || null
+      };
+
+      setCurrentCustomer(cust);
+      subscribeCustomerDoc(docId); // CHANGE C: re-subscribe with correct Firestore doc ID
+      setAuthError(null);
+      setLoginId('');
+      setLoginPin('');
+      setShowLogin(false);
+    } catch (err: any) {
+      // CHANGE D: Error visibility
+      console.error('[handleLogin] Firestore lookup failed:', err);
+      setAuthError('Login nahi ho paya — internet check karo');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -614,6 +870,92 @@ function AppShell({ children }: { children: React.ReactNode }) {
     alert('Shop Profile updated successfully!');
   };
 
+  if (isInitializing) {
+    return (
+      <div className="fixed inset-0 w-full h-full bg-[#0b0f19] flex flex-col items-center justify-center p-6 z-[9999] transition-opacity duration-500 ease-out">
+        <style>{`
+          @keyframes wavePulse {
+            0%, 100% {
+              opacity: 0.45;
+              transform: scale(0.93);
+              border-color: rgba(212, 163, 89, 0.2);
+              background-color: rgba(212, 163, 89, 0.02);
+            }
+            50% {
+              opacity: 1;
+              transform: scale(1.07);
+              border-color: rgba(212, 163, 89, 0.8);
+              background-color: rgba(212, 163, 89, 0.15);
+            }
+          }
+          .animate-wave-1 { animation: wavePulse 1.8s infinite ease-in-out; }
+          .animate-wave-2 { animation: wavePulse 1.8s infinite ease-in-out; animation-delay: 0.3s; }
+          .animate-wave-3 { animation: wavePulse 1.8s infinite ease-in-out; animation-delay: 0.6s; }
+        `}</style>
+        
+        <div className="text-center space-y-10 max-w-sm flex flex-col items-center">
+          {/* Brand Typography Hierarchy */}
+          <div className="flex flex-col items-center">
+            {/* TOP: Stylish capital letter "S" */}
+            <div className="text-8xl sm:text-9xl font-serif font-black text-brand-gold select-none leading-none mb-1 tracking-normal animate-pulse">
+              S
+            </div>
+            
+            {/* MIDDLE: "SHIVAM" */}
+            <h1 className="text-2xl sm:text-3xl font-black tracking-[0.3em] text-white select-none uppercase">
+              SHIVAM
+            </h1>
+            
+            {/* BOTTOM: "EVERYTHING AT ONCE" */}
+            <p className="text-[10px] sm:text-[11px] font-bold text-brand-gold tracking-[0.35em] uppercase mt-2.5 opacity-95 select-none">
+              EVERYTHING AT ONCE
+            </p>
+          </div>
+
+          {/* Sequential Wave Category Icons */}
+          <div className="flex items-center justify-center gap-6 pt-2">
+            {/* 1. Cosmetics */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="animate-wave-1 w-12 h-12 rounded-full border border-brand-gold/30 bg-brand-gold/5 flex items-center justify-center text-brand-gold transition-all duration-300">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="8" y="12" width="8" height="10" rx="1.5" />
+                  <path d="M10 12V6.5l4-2.5v8" fill="currentColor" fillOpacity="0.15" />
+                  <line x1="8" y1="16" x2="16" y2="16" />
+                </svg>
+              </div>
+              <span className="text-[10px] font-semibold tracking-wide text-slate-400 select-none">Cosmetics</span>
+            </div>
+
+            {/* 2. Imitations */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="animate-wave-2 w-12 h-12 rounded-full border border-brand-gold/30 bg-brand-gold/5 flex items-center justify-center text-brand-gold transition-all duration-300">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2l3 3h-6z" fill="currentColor" fillOpacity="0.2" />
+                  <circle cx="12" cy="13" r="6" />
+                  <path d="M9 5c0 0 3 2 3 2s3-2 3-2" />
+                </svg>
+              </div>
+              <span className="text-[10px] font-semibold tracking-wide text-slate-400 select-none">Imitations</span>
+            </div>
+
+            {/* 3. Hair Accessories */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="animate-wave-3 w-12 h-12 rounded-full border border-brand-gold/30 bg-brand-gold/5 flex items-center justify-center text-brand-gold transition-all duration-300">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="7" r="2" />
+                  <path d="M11 8.5C9 10 6 12 6 15c0 3 3 4 3 4" />
+                  <path d="M13 8.5C15 10 18 12 18 15c0 3-3 4-3 4" />
+                  <path d="M9 15h6M7 12c2 .5 8 .5 10 0" />
+                </svg>
+              </div>
+              <span className="text-[10px] font-semibold tracking-wide text-slate-400 select-none whitespace-nowrap">Hair Accessories</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentCustomer) {
     return (
       <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased overflow-y-auto flex flex-col justify-center items-center p-4 z-[999]">
@@ -622,9 +964,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-brand-gold/10 text-brand-gold border border-brand-gold/20 mb-2">
               <Store size={32} />
             </div>
-            <h1 className="text-2xl font-black tracking-wide text-white">SHIVAM WHOLESALE</h1>
-            <p className="text-slate-400 text-xs sm:text-sm">
-              {authViewMode === 'login' ? 'Login with your system credentials' : 'Register your wholesale shop'}
+            <h1 className="text-2xl font-black tracking-wide text-white">SHIVAM</h1>
+            <p className="text-brand-gold font-bold tracking-widest text-xs uppercase">
+              Everything at once
             </p>
           </div>
 
@@ -784,7 +1126,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (currentCustomer.status?.toLowerCase() === 'pending') {
+  if (currentCustomer && !isApprovedStatus(currentCustomer.status)) {
     return (
       <div className="fixed inset-0 w-full h-full bg-brand-navy-dark text-slate-100 font-sans antialiased flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-brand-navy-card border border-red-500/30 rounded-2xl shadow-2xl p-6 sm:p-8 space-y-6 text-center">
@@ -795,7 +1137,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <div className="space-y-2">
             <h2 className="text-xl font-black text-white">Registration Pending Approval</h2>
             <p className="text-red-400 font-bold text-sm bg-red-950/20 border border-red-500/25 py-2.5 px-4 rounded-xl leading-relaxed">
-              Your account is awaiting admin verification. Please contact wholesale support.
+              Aapka account approval ke liye pending hai
             </p>
           </div>
 
@@ -807,7 +1149,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <button
-            onClick={() => setCurrentCustomer(null)}
+            onClick={handleLogoutOrSwitch}
             className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs py-2.5 rounded-xl transition border border-slate-700"
           >
             Switch Shop / Logout
@@ -1085,6 +1427,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
                     setIsDispatching(true);
 
                     try {
+                      const { isRecordingVoice, stopVoiceRecordingFn } = useAppStore.getState();
+                      if (isRecordingVoice && stopVoiceRecordingFn) {
+                        stopVoiceRecordingFn();
+                        // Wait up to 3s for the recording's onstop to populate orderVoiceNote
+                        for (let i = 0; i < 30; i++) {
+                          await new Promise(r => setTimeout(r, 100));
+                          if (useAppStore.getState().orderVoiceNote) break;
+                        }
+                        if (!useAppStore.getState().orderVoiceNote) {
+                          console.warn('[Dispatch] Voice note not ready in time — sending order without it');
+                        }
+                      }
+
                       const success = await placeOrder();
                       if (success) {
                         setIsCartOpen(false);
@@ -1185,11 +1540,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
                     <div className="flex gap-2">
                       <button 
-                        onClick={() => {
-                          setCurrentCustomer(null);
-                          setFormData(initialRegistrationFormData);
-                          setModalMode('login');
-                        }}
+                        onClick={handleLogoutOrSwitch}
                         className="px-4 py-2 rounded-xl font-bold text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition"
                       >
                         Switch / Logout
@@ -1315,7 +1666,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
                             <button
                               type="button"
                               onClick={() => {
+                                if (!isApprovedStatus(c.status)) {
+                                  setAuthError('Aapka account approval ke liye pending hai');
+                                  return;
+                                }
                                 setCurrentCustomer(c);
+                                subscribeCustomerDoc(c.id || c.customerId || c.customerCode);
                                 setShowLogin(false);
                               }}
                               className="flex-1 text-left"
@@ -1340,8 +1696,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
                                   try {
                                     await deleteCustomerWithCascade(cid);
                                     deleteCustomer(cid);
-                                    if (currentCustomer && (currentCustomer.customerId === cid || currentCustomer.customerCode === cid)) {
-                                      setCurrentCustomer(null);
+                                    if (currentCustomer && (currentCustomer.customerId === cid || currentCustomer.customerCode === cid || currentCustomer.id === cid)) {
+                                      handleLogoutOrSwitch();
                                     }
                                   } catch (err) {
                                     console.error('Error deleting customer:', err);
@@ -1369,12 +1725,20 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
 
                   <form onSubmit={handleLogin} className="space-y-3">
+                    {authError && (
+                      <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-xl text-xs font-semibold leading-relaxed">
+                        {authError}
+                      </div>
+                    )}
                     <div>
                       <input
                         type="text"
                         placeholder="Enter Customer Code / ID (e.g. CUST-101)"
                         value={loginId}
-                        onChange={e => setLoginId(e.target.value)}
+                        onChange={e => {
+                          setLoginId(e.target.value);
+                          setAuthError(null);
+                        }}
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white font-mono placeholder:text-slate-500 focus:outline-none focus:border-brand-gold text-sm"
                         required
                       />
@@ -1382,16 +1746,20 @@ function AppShell({ children }: { children: React.ReactNode }) {
                     <div className="flex justify-end gap-2">
                       <button 
                         type="button" 
-                        onClick={() => setShowLogin(false)} 
+                        onClick={() => {
+                          setShowLogin(false);
+                          setAuthError(null);
+                        }} 
                         className="px-4 py-2 rounded-xl font-bold text-xs text-slate-400 hover:text-white"
                       >
                         Cancel
                       </button>
                       <button 
                         type="submit" 
-                        className="px-5 py-2 rounded-xl font-black text-xs bg-brand-gold text-black hover:bg-brand-gold-light transition"
+                        disabled={isLoggingIn}
+                        className="px-5 py-2 rounded-xl font-black text-xs bg-brand-gold text-black hover:bg-brand-gold-light transition disabled:opacity-50"
                       >
-                        Login Shop
+                        {isLoggingIn ? 'Logging in...' : 'Login Shop'}
                       </button>
                     </div>
                   </form>

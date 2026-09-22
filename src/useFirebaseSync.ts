@@ -83,8 +83,9 @@ export function normalizePhotoDoc(docSnap: QueryDocumentSnapshot<DocumentData>):
 export async function loadSubCategoriesForCategory(categoryId: string) {
   if (!categoryId) return;
   const existing = useAppStore.getState().subCategories.filter(s => s.categoryId === categoryId);
-  const hasNoData = existing.length === 0;
-  useAppStore.setState({ isSubCategoriesLoading: hasNoData, syncError: null });
+  const hasExistingData = existing.length > 0;
+  // If data already exists for this id: do NOT set loading=true (no spinner). Set loading=true ONLY when store has no data.
+  useAppStore.setState({ isSubCategoriesLoading: !hasExistingData, syncError: null });
   try {
     const q = query(
       collection(db, COLLECTIONS.SUBCATEGORIES),
@@ -108,12 +109,17 @@ export async function loadSubCategoriesForCategory(categoryId: string) {
     fetchedSubs.sort((a, b) => (a.orderIndex ?? a.sortOrder ?? 0) - (b.orderIndex ?? b.sortOrder ?? 0));
 
     useAppStore.setState((state) => {
-      const newActiveSubId = state.activeSubCategoryId && fetchedSubs.some((s) => s.id === state.activeSubCategoryId)
+      const newIds = new Set(fetchedSubs.map(s => s.id));
+      const otherSubs = state.subCategories.filter(s => s.categoryId !== categoryId && !newIds.has(s.id));
+      const combined = [...otherSubs, ...fetchedSubs];
+      combined.sort((a, b) => (a.orderIndex ?? a.sortOrder ?? 0) - (b.orderIndex ?? b.sortOrder ?? 0));
+
+      const newActiveSubId = state.activeSubCategoryId && combined.some((s) => s.id === state.activeSubCategoryId)
         ? state.activeSubCategoryId
-        : (fetchedSubs[0]?.id || '');
+        : (fetchedSubs[0]?.id || state.activeSubCategoryId || '');
 
       return {
-        subCategories: fetchedSubs,
+        subCategories: combined,
         activeSubCategoryId: newActiveSubId,
         isSubCategoriesLoading: false,
         syncError: null
@@ -132,8 +138,9 @@ export async function loadSubCategoriesForCategory(categoryId: string) {
 export async function loadPhotosForCategory(categoryId: string) {
   if (!categoryId) return;
   const existing = useAppStore.getState().photos.filter(p => p.categoryId === categoryId);
-  const hasNoData = existing.length === 0;
-  useAppStore.setState({ isPhotosLoading: hasNoData, syncError: null });
+  const hasExistingData = existing.length > 0;
+  // If data already exists for this id: do NOT set loading=true (no spinner). Set loading=true ONLY when store has no data.
+  useAppStore.setState({ isPhotosLoading: !hasExistingData, syncError: null });
   try {
     const qPhotos = query(
       collection(db, COLLECTIONS.PHOTOS),
@@ -168,10 +175,14 @@ export async function loadPhotosForCategory(categoryId: string) {
     const merged = Array.from(photoMap.values());
     merged.sort((a, b) => (a.orderIndex ?? a.sortOrder ?? 0) - (b.orderIndex ?? b.sortOrder ?? 0));
 
-    useAppStore.setState({
-      photos: merged,
-      isPhotosLoading: false,
-      syncError: null
+    useAppStore.setState((state) => {
+      const newIds = new Set(merged.map(m => m.id));
+      const otherPhotos = state.photos.filter(p => p.categoryId !== categoryId && !newIds.has(p.id));
+      return {
+        photos: [...otherPhotos, ...merged],
+        isPhotosLoading: false,
+        syncError: null
+      };
     });
   } catch (err: any) {
     console.error('[loadPhotosForCategory Error]', err);
@@ -186,8 +197,9 @@ export async function loadPhotosForCategory(categoryId: string) {
 export async function loadPhotosForSubCategory(subCategoryId: string) {
   if (!subCategoryId) return;
   const existing = useAppStore.getState().photos.filter(p => p.subCategoryId === subCategoryId);
-  const hasNoData = existing.length === 0;
-  useAppStore.setState({ isPhotosLoading: hasNoData, syncError: null });
+  const hasExistingData = existing.length > 0;
+  // If data already exists for this id: do NOT set loading=true (no spinner). Set loading=true ONLY when store has no data.
+  useAppStore.setState({ isPhotosLoading: !hasExistingData, syncError: null });
   try {
     const qPhotos = query(
       collection(db, COLLECTIONS.PHOTOS),
@@ -241,10 +253,14 @@ export async function loadPhotosForSubCategory(subCategoryId: string) {
     const merged = Array.from(photoMap.values());
     merged.sort((a, b) => (a.orderIndex ?? a.sortOrder ?? 0) - (b.orderIndex ?? b.sortOrder ?? 0));
 
-    useAppStore.setState({
-      photos: merged,
-      isPhotosLoading: false,
-      syncError: null
+    useAppStore.setState((state) => {
+      const newIds = new Set(merged.map(m => m.id));
+      const otherPhotos = state.photos.filter(p => p.subCategoryId !== subCategoryId && !newIds.has(p.id));
+      return {
+        photos: [...otherPhotos, ...merged],
+        isPhotosLoading: false,
+        syncError: null
+      };
     });
   } catch (err: any) {
     console.error('[loadPhotosForSubCategory Error]', err);
