@@ -65,6 +65,7 @@ export function Cart() {
                 alt={item.photoCode} 
                 loading="lazy"
                 decoding="async"
+                draggable={false}
                 className="w-16 h-16 rounded-lg object-cover border border-slate-600 flex-shrink-0" 
               />
               <div className="flex-1 min-w-0">

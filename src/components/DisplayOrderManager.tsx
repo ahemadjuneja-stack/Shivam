@@ -139,6 +139,7 @@ export function DisplayOrderManager() {
                     alt={cat.displayName} 
                     loading="lazy" 
                     decoding="async" 
+                    draggable={false}
                     className="w-10 h-10 rounded-lg object-cover border border-slate-700" 
                   />
                   <div>
@@ -219,6 +220,7 @@ export function DisplayOrderManager() {
                       alt={sub.name} 
                       loading="lazy" 
                       decoding="async" 
+                      draggable={false}
                       className="w-10 h-10 rounded-lg object-cover border border-slate-700" 
                     />
                     <div>
@@ -335,6 +337,7 @@ export function DisplayOrderManager() {
                       alt={photo.photoCode} 
                       loading="lazy" 
                       decoding="async" 
+                      draggable={false}
                       className="w-12 h-12 rounded-lg object-cover border border-slate-700" 
                     />
                     <div>

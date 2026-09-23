@@ -304,6 +304,56 @@ function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener('focus', handleWindowFocus);
     };
   }, [isChatOpen]);
+
+  // Hardened Pull-to-Refresh guard: only preventDefault when gesture is clearly a pull-down at top of scroller
+  useEffect(() => {
+    let startY = 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        startY = e.touches[0].clientY;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const currentY = e.touches[0].clientY;
+      const pullDownDistance = currentY - startY;
+
+      // Find the nearest scrollable ancestor element from touch target
+      let target = e.target as HTMLElement | null;
+      let scroller: HTMLElement | null = null;
+      while (target && target !== document.body && target !== document.documentElement) {
+        const style = window.getComputedStyle(target);
+        const overflowY = style.overflowY;
+        if ((overflowY === 'auto' || overflowY === 'scroll') && target.scrollHeight > target.clientHeight) {
+          scroller = target;
+          break;
+        }
+        target = target.parentElement;
+      }
+
+      const scrollTop = scroller ? scroller.scrollTop : (document.scrollingElement?.scrollTop ?? 0);
+
+      // Only preventDefault when BOTH:
+      // (e.touches[0].clientY - startY) > 10   ← clear downward pull, not jitter
+      // AND the found scroller's scrollTop <= 0
+      // Finger moving up, small jitters (<10px), and scroller-not-at-top must always be allowed.
+      if (pullDownDistance > 10 && scrollTop <= 0) {
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+      }
+    };
+
+    document.addEventListener('touchstart', onTouchStart, { passive: true });
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+
+    return () => {
+      document.removeEventListener('touchstart', onTouchStart);
+      document.removeEventListener('touchmove', onTouchMove);
+    };
+  }, []);
   const [isStaffOrderManagementActive, setIsStaffOrderManagementActive] = useState(false);
   const [loginId, setLoginId] = useState('');
   const [loginPin, setLoginPin] = useState('');
@@ -1311,7 +1361,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <header className="bg-brand-navy-card/95 backdrop-blur-md border-b border-brand-navy-border px-3 py-1.5 flex items-center justify-between gap-3 flex-shrink-0 z-20">
             {/* Brand Logo & Name */}
             <Link to="/" className="flex items-center gap-2 group">
-              <img src="/icon.svg" alt="SHIVAM" className="w-7 h-7 rounded-lg shadow-md group-hover:scale-105 transition-transform" />
+              <img src="/icon.svg" alt="SHIVAM" draggable={false} className="w-7 h-7 rounded-lg shadow-md group-hover:scale-105 transition-transform" />
               <h1 className="text-sm font-black tracking-wider text-white">SHIVAM</h1>
             </Link>
 
@@ -1464,6 +1514,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <img 
                         src={item.imageUri} 
                         alt={item.photoCode} 
+                        draggable={false}
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute top-2 left-2 flex items-center gap-2">

@@ -834,7 +834,7 @@ export function StaffOrderManagement() {
                         {/* Item Image */}
                         <div className="w-full aspect-[4/3] bg-black/40 rounded-lg overflow-hidden flex items-center justify-center mb-2 relative border border-slate-800/60">
                           {itemImg ? (
-                            <img src={itemImg} alt={itemName} className="w-full h-full object-contain" />
+                            <img src={itemImg} alt={itemName} draggable={false} className="w-full h-full object-contain" />
                           ) : (
                             <span className="text-slate-500 font-mono text-xs">Image Missing</span>
                           )}
@@ -1120,6 +1120,7 @@ export function StaffOrderManagement() {
                         src={item.imageUri} 
                         alt={item.photoCode} 
                         referrerPolicy="no-referrer"
+                        draggable={false}
                         className="w-full h-full object-cover group-hover:scale-105 transition duration-200"
                       />
                       <div className="absolute top-1.5 left-1.5 flex flex-col gap-1 max-w-[90%]">
@@ -1322,6 +1323,7 @@ export function StaffOrderManagement() {
                               alt="attached" 
                               loading="lazy"
                               referrerPolicy="no-referrer"
+                              draggable={false}
                               className="max-w-full rounded mb-1 max-h-40 object-cover" 
                             />
                           )}
@@ -1454,6 +1456,7 @@ export function StaffOrderManagement() {
                 src={selectedPhotoDetail.imageUri} 
                 alt={selectedPhotoDetail.photoCode} 
                 referrerPolicy="no-referrer"
+                draggable={false}
                 className="w-full h-full object-contain"
               />
               <div className="absolute top-3 left-3 flex items-center gap-2">

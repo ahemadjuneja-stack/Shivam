@@ -46,8 +46,8 @@ export function SubCategoryGallery() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
         {photos.map(photo => (
-          <div key={photo.id} className="bg-brand-navy-card rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-            <div className="aspect-video bg-slate-900 relative">
+          <div key={photo.id} className="bg-brand-navy-card rounded-xl border border-slate-700 overflow-hidden shadow-lg touch-pan-y">
+            <div className="aspect-video bg-slate-900 relative touch-pan-y">
               <img 
                 src={(() => {
                   const url = photo.thumbnailUrl || photo.imageUri;
@@ -56,7 +56,8 @@ export function SubCategoryGallery() {
                 alt={photo.photoCode} 
                 loading="lazy" 
                 decoding="async" 
-                className="w-full h-full object-cover" 
+                draggable={false}
+                className="w-full h-full object-cover touch-pan-y" 
               />
               <div className="absolute top-2 left-2 bg-black/80 text-white font-mono text-xs px-2 py-1 rounded border border-slate-600">
                 {photo.photoCode}

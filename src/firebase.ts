@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
 import { 
   initializeFirestore,
   doc, 
@@ -25,6 +26,9 @@ import { generateOrderId } from './lib/idGenerator';
 // Initialize Firebase App
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const firebaseApp = app;
+
+// Firebase Authentication instance
+export const auth = getAuth(app);
 
 // Storage bucket instance
 export const storage = typeof window !== 'undefined' 
@@ -101,10 +105,10 @@ export async function uploadMediaToStorage(
 }
 
 // Custom Database ID
-export const FIRESTORE_DATABASE_ID = "ai-studio-shivam-6138ca5c-1e3b-412f-957d-d52501eff503";
+export const FIRESTORE_DATABASE_ID = firebaseConfig.firestoreDatabaseId || "ai-studio-shivam-6138ca5c-1e3b-412f-957d-d52501eff503";
 
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true
+  experimentalAutoDetectLongPolling: true
 }, FIRESTORE_DATABASE_ID);
 
 
@@ -150,6 +154,8 @@ export interface FirestoreErrorInfo {
   authInfo: {
     userId?: string | null;
     email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
   };
 }
 
@@ -158,8 +164,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   const errInfo: FirestoreErrorInfo = {
     error: errorMessage,
     authInfo: {
-      userId: null,
-      email: null,
+      userId: auth?.currentUser?.uid || null,
+      email: auth?.currentUser?.email || null,
+      emailVerified: auth?.currentUser?.emailVerified || null,
+      isAnonymous: auth?.currentUser?.isAnonymous || null,
     },
     operationType,
     path
@@ -183,7 +191,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   return errInfo;
 }
 
-// Test Firestore connection on boot
+// Test Firestore connection on boot (non-blocking)
 export async function testFirestoreConnection(): Promise<boolean> {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
@@ -196,6 +204,10 @@ export async function testFirestoreConnection(): Promise<boolean> {
     // Any other response means the server was reached
     return true;
   }
+}
+
+if (typeof window !== 'undefined') {
+  testFirestoreConnection().catch(() => {});
 }
 
 /* ==========================================================================

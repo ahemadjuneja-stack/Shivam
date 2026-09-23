@@ -243,15 +243,16 @@ export function Home() {
                 <button
                   key={cat.id}
                   onClick={() => handleSelectCategory(cat.id)}
-                  className="group w-full flex flex-col gap-3 p-3 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-all duration-200 hover:scale-[1.01] active:scale-[0.98] text-center shadow-lg focus:outline-none"
+                  className="group w-full flex flex-col gap-3 p-3 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-all duration-200 hover:scale-[1.01] active:scale-[0.98] text-center shadow-lg focus:outline-none touch-pan-y"
                 >
-                  <div className="w-full aspect-[16/10] sm:aspect-video rounded-xl overflow-hidden bg-black border-2 border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center">
+                  <div className="w-full aspect-[16/10] sm:aspect-video rounded-xl overflow-hidden bg-black border-2 border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center touch-pan-y">
                     <img
                       src={cat.thumbnailUrl?.includes('images.unsplash.com') ? cat.thumbnailUrl.replace('w=1280', 'w=640') : cat.thumbnailUrl}
                       alt={cat.displayName}
                       loading="lazy"
                       decoding="async"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      draggable={false}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 touch-pan-y"
                     />
                   </div>
                   <div className="flex items-center justify-center gap-2 py-1.5 flex-shrink-0">
@@ -333,16 +334,17 @@ export function Home() {
                 <button
                   key={sub.id}
                   onClick={() => handleSelectSubCategory(sub.id)}
-                  className="group flex flex-col gap-2 transition-all duration-200 hover:scale-[1.02] active:scale-95 text-center focus:outline-none"
+                  className="group flex flex-col gap-2 transition-all duration-200 hover:scale-[1.02] active:scale-95 text-center focus:outline-none touch-pan-y"
                 >
                   {/* 1. Strict 16:9 Thumbnail Image (Pure image, no text/folder icons over it) */}
-                  <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg">
+                  <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg touch-pan-y">
                     <img
                       src={sub.thumbnailUrl?.includes('images.unsplash.com') ? sub.thumbnailUrl.replace('w=1280', 'w=640') : sub.thumbnailUrl}
                       alt={sub.name}
                       loading="lazy"
                       decoding="async"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      draggable={false}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 touch-pan-y"
                     />
                   </div>
 
@@ -414,7 +416,7 @@ export function Home() {
                   <div
                     key={photo.id}
                     onClick={() => handleOpenFullImage(photo)}
-                    className="group relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-brand-gold cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 shadow-lg flex items-center justify-center"
+                    className="group relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-brand-gold cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 shadow-lg flex items-center justify-center touch-pan-y"
                   >
                     {/* Clean 16:9 Photo Thumbnail */}
                     <img
@@ -425,7 +427,8 @@ export function Home() {
                       alt={photo.photoCode}
                       loading="lazy"
                       decoding="async"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      draggable={false}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 touch-pan-y"
                     />
 
                     {/* Ordered Badge if already in cart */}

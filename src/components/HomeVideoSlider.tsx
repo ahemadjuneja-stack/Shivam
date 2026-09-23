@@ -255,7 +255,8 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
 
   return (
     <div 
-      className="relative w-full h-full flex flex-col justify-between overflow-hidden rounded-2xl bg-black border border-slate-800/90 shadow-2xl select-none group"
+      className="relative w-full h-full flex flex-col justify-between overflow-hidden rounded-2xl bg-black border border-slate-800/90 shadow-2xl select-none group touch-pan-y"
+      style={{ touchAction: 'pan-y' }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -271,8 +272,9 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
     >
       {/* ----------------- SLIDER TRACK ----------------- */}
       <div 
-        className="relative w-full h-full flex"
+        className="relative w-full h-full flex touch-pan-y"
         style={{
+          touchAction: 'pan-y',
           transform: `translateX(calc(-${currentIndex * 100}% + ${dragOffset}px))`,
           transition: isDragging.current ? 'none' : 'transform 400ms cubic-bezier(0.25, 1, 0.5, 1)'
         }}
@@ -286,8 +288,8 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
           return (
             <div 
               key={photo.id}
-              className="relative w-full h-full flex-shrink-0 bg-black flex items-center justify-center overflow-hidden"
-              style={{ width: '100%' }}
+              className="relative w-full h-full flex-shrink-0 bg-black flex items-center justify-center overflow-hidden touch-pan-y"
+              style={{ width: '100%', touchAction: 'pan-y' }}
             >
               {videoUrl ? (
                 <video
@@ -303,7 +305,7 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
                   loop={false}
                   onTimeUpdate={isCurrent ? handleTimeUpdate : undefined}
                   onEnded={isCurrent ? handleVideoEnded : undefined}
-                  className="w-full h-full object-cover sm:object-contain bg-black cursor-pointer"
+                  className="w-full h-full object-cover sm:object-contain bg-black cursor-pointer touch-pan-y"
                   onClick={togglePlayPause}
                 />
               ) : (
@@ -312,7 +314,8 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
                   alt={title} 
                   loading="lazy"
                   decoding="async"
-                  className="w-full h-full object-contain"
+                  draggable={false}
+                  className="w-full h-full object-contain touch-pan-y"
                 />
               )}
             </div>

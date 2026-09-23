@@ -53,3 +53,11 @@ body {
   color: #E2E8F0;
 }
 
+img {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  touch-action: pan-y;
+}
+
