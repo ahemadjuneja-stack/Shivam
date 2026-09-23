@@ -7,10 +7,10 @@ import {
   Square, 
   Trash2, 
   CheckCheck, 
-  Store, 
   Bell, 
   Users, 
   MessageSquare, 
+  MessageCircle,
   Phone, 
   PlusCircle, 
   Heart, 
@@ -23,6 +23,13 @@ import { ChatMessage, CommunityPost } from '../types';
 import { AudioMessagePlayer } from './AudioMessagePlayer';
 import { generateMessageId } from '../lib/idGenerator';
 import { uploadMediaToStorage, compressCanvasImage, dataUriToBlob } from '../services/storageService';
+import { useKeyboardSafeInput } from '../utils/mobileKeyboard';
+
+function isStorageUrlText(val?: string | null): boolean {
+  if (!val || typeof val !== 'string') return false;
+  const str = val.trim();
+  return str.startsWith('http') && (str.includes('firebasestorage') || str.includes('storage.googleapis.com'));
+}
 
 function getDateKey(timestamp: number): string {
   if (!timestamp) return '';
@@ -78,6 +85,7 @@ export function ChatModal({
   const deleteCommunityPost = useAppStore(state => state.deleteCommunityPost);
 
   const [activeTab, setActiveTab] = useState<'chat' | 'broadcast' | 'community'>('chat');
+  const { keyboardOffset } = useKeyboardSafeInput();
 
   const isAdmin = !!defaultCustomerCode;
   const customerId = isAdmin ? defaultCustomerCode : (currentCustomer?.customerId || currentCustomer?.customerCode || '');
@@ -133,12 +141,27 @@ export function ChatModal({
     }
   }, [isOpen, markMessagesAsRead]);
 
-  // Scroll to bottom on new messages
+  const lastMessageId = chatMessages.length > 0 
+    ? (chatMessages[chatMessages.length - 1].id || (chatMessages[chatMessages.length - 1] as any).messageId || '') 
+    : '';
+
+  // Auto-scroll to bottom on modal open (instant)
   useEffect(() => {
-    if (activeTab === 'chat') {
+    if (isOpen && activeTab === 'chat') {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      const timer = setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, activeTab]);
+
+  // Auto-scroll to bottom on every new message (smooth)
+  useEffect(() => {
+    if (isOpen && activeTab === 'chat') {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [chatMessages.length, activeTab]);
+  }, [chatMessages.length, lastMessageId]);
 
   // Clean up recording timer
   useEffect(() => {
@@ -306,6 +329,7 @@ export function ChatModal({
 
     // 5. CHANGE B: Contract fields (write ALL variants)
     const msgId = generateMessageId();
+    const finalCaption = caption ? caption.trim() : '';
     const newMsg: ChatMessage = {
       id: msgId,
       messageId: msgId,
@@ -314,7 +338,7 @@ export function ChatModal({
       shopName: effectiveShopName,
       sender: isAdmin ? 'admin' : 'customer',
       type: 'image',
-      text: caption || undefined,
+      text: finalCaption || undefined,
       mediaUrl: cloudImageUrl,
       imageUri: cloudImageUrl,
       imageUrl: cloudImageUrl,
@@ -322,6 +346,9 @@ export function ChatModal({
       timestamp: Date.now(),
       createdAt: Date.now()
     };
+    // Ensure content / message never contain URLs
+    delete (newMsg as any).content;
+    delete (newMsg as any).message;
 
     console.log('[ChatModal handleSendImage] final image-message object:', JSON.stringify(newMsg));
     addMessage(newMsg);
@@ -393,6 +420,9 @@ export function ChatModal({
           timestamp: Date.now(),
           createdAt: Date.now()
         };
+        // Ensure content / message never contain URLs
+        delete (newMsg as any).content;
+        delete (newMsg as any).message;
         console.log('[ChatModal stopAndSendRecording] final voice-message object:', JSON.stringify(newMsg));
         addMessage(newMsg);
         stream.getTracks().forEach(track => track.stop());
@@ -494,7 +524,10 @@ export function ChatModal({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-[#0b141a] text-[#e9edef] w-full max-w-lg h-[92vh] sm:h-[86vh] rounded-2xl shadow-2xl border border-slate-700/80 flex flex-col overflow-hidden">
+      <div 
+        className="bg-[#0b141a] text-[#e9edef] w-full max-w-lg h-[92vh] sm:h-[86vh] rounded-2xl shadow-2xl border border-slate-700/80 flex flex-col overflow-hidden"
+        style={{ fontFamily: "Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif" }}
+      >
         
         {/* WhatsApp-Style Header */}
         <div className="bg-[#202c33] px-3.5 py-2.5 border-b border-slate-700/60 flex items-center justify-between flex-shrink-0 shadow-md">
@@ -502,14 +535,14 @@ export function ChatModal({
             {/* Showroom Admin Avatar */}
             <div className="relative">
               <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white font-bold text-sm shadow">
-                <Store size={20} />
+                <MessageCircle size={20} />
               </div>
               <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#202c33]" />
             </div>
 
             <div>
               <div className="text-sm font-bold text-white flex items-center gap-2">
-                <span>Shivam Communication Hub</span>
+                <span>Chat Box</span>
                 <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950/70 border border-emerald-500/30 px-1.5 py-0.2 rounded-full">
                   Admin
                 </span>
@@ -547,9 +580,6 @@ export function ChatModal({
             <div className="flex items-center gap-1.5 text-[#8696a0]">
               <span>Active Customer:</span>
               <span className="font-bold text-amber-300">{effectiveShopName}</span>
-              <span className="font-mono text-[10px] bg-[#202c33] text-slate-300 px-1.5 py-0.5 rounded border border-slate-700">
-                {effectiveCustomerId}
-              </span>
             </div>
             <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
@@ -567,7 +597,7 @@ export function ChatModal({
                   : 'text-[#8696a0] hover:text-[#e9edef]'
               }`}
             >
-              <MessageSquare size={13} />
+              <MessageCircle size={13} />
               <span>Direct Chat</span>
               {unreadDirectCount > 0 ? (
                 <span className="min-w-[18px] h-[18px] px-1 bg-[#25d366] text-slate-950 text-[10px] font-black rounded-full flex items-center justify-center shadow">
@@ -736,12 +766,16 @@ export function ChatModal({
                           </div>
                         )}
 
-                        {/* Text content */}
-                        {msg.text && (
-                          <p dir="ltr" className="text-xs leading-relaxed whitespace-pre-wrap select-text text-left" style={{ direction: 'ltr', textAlign: 'left' }}>
-                            <span>{msg.text}</span>
-                          </p>
-                        )}
+                        {/* Text content with Storage URL render guard */}
+                        {(() => {
+                          const rawText = msg.text || (msg as any).content || (msg as any).message;
+                          if (!rawText || isStorageUrlText(rawText)) return null;
+                          return (
+                            <p dir="ltr" className="text-xs leading-relaxed whitespace-pre-wrap select-text text-left" style={{ direction: 'ltr', textAlign: 'left' }}>
+                              <span>{rawText}</span>
+                            </p>
+                          );
+                        })()}
 
                         {/* Timestamp & Double Ticks */}
                         <div className="flex items-center justify-end gap-1 text-[9px] font-mono text-[#8696a0] mt-0.5">
@@ -761,61 +795,72 @@ export function ChatModal({
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Image Preview Overlay before sending */}
+            {/* Compact Image Preview Overlay before sending */}
             {selectedImage && (
-              <div className="bg-[#111b21] p-3 border-t border-slate-700 flex flex-col gap-2 z-20 animate-fadeIn">
-                <div className="flex justify-between items-center text-xs font-bold text-amber-300">
-                  <div className="flex items-center gap-1.5">
-                    <ImageIcon size={14} />
-                    <span>Image Preview</span>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      if (!isUploadingImage) {
-                        setSelectedImage(null);
-                        setImageCaption('');
-                      }
-                    }}
-                    disabled={isUploadingImage}
-                    className="p-1 hover:text-red-400 text-[#8696a0] transition disabled:opacity-50"
-                  >
-                    <X size={16} />
-                  </button>
+              <div 
+                className="absolute bottom-0 inset-x-0 bg-[#111b21] border-t border-slate-700/80 shadow-2xl rounded-t-2xl p-3 z-30 flex flex-col gap-2 max-h-[70vh] landscape:max-h-[85vh] overflow-y-auto animate-fadeIn"
+                style={keyboardOffset > 0 ? { transform: `translateY(-${keyboardOffset}px)` } : undefined}
+              >
+                {/* Small image preview (max-h-40, object-contain, centered) */}
+                <div className="relative rounded-xl overflow-hidden max-h-40 landscape:max-h-24 bg-black/60 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0">
+                  <img 
+                    src={selectedImage} 
+                    alt="Preview" 
+                    className="max-h-40 landscape:max-h-24 w-auto object-contain mx-auto rounded-lg" 
+                  />
                 </div>
 
-                <div className="relative rounded-xl overflow-hidden max-h-44 bg-black/60 border border-slate-700 flex items-center justify-center">
-                  <img src={selectedImage} alt="Preview" className="max-h-44 object-contain" />
-                </div>
-
+                {/* Upload status indicator if uploading */}
                 {imageUploadStatus && (
-                  <div className="bg-[#182229] border border-emerald-500/40 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold flex items-center justify-center gap-2 animate-pulse">
+                  <div className="bg-[#182229] border border-emerald-500/40 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold flex items-center justify-center gap-2 animate-pulse flex-shrink-0">
                     <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
                     <span>{imageUploadStatus}</span>
                   </div>
                 )}
 
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={imageCaption}
-                    onChange={(e) => setImageCaption(e.target.value)}
-                    placeholder="Add a caption... (optional)"
-                    disabled={isUploadingImage}
-                    className="flex-1 bg-[#202c33] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-[#8696a0] focus:outline-none focus:border-emerald-500 disabled:opacity-50"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleSendImage();
+                {/* Caption input ("Kuch likhna ho to likho..." placeholder) — auto-focused */}
+                <input
+                  autoFocus
+                  type="text"
+                  value={imageCaption}
+                  onChange={(e) => setImageCaption(e.target.value)}
+                  placeholder="Kuch likhna ho to likho..."
+                  disabled={isUploadingImage}
+                  className="w-full bg-[#202c33] border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-[#8696a0] focus:outline-none focus:border-emerald-500 disabled:opacity-50 flex-shrink-0"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSendImage();
+                    }
+                  }}
+                />
+
+                {/* A row with TWO buttons side by side: [Cancel] (slate) and [Send] (emerald) */}
+                <div className="grid grid-cols-2 gap-2 pt-0.5 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isUploadingImage) {
+                        setSelectedImage(null);
+                        setImageCaption('');
+                        setImageUploadStatus(null);
                       }
                     }}
-                  />
+                    disabled={isUploadingImage}
+                    className="py-2.5 px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+                  >
+                    <X size={15} />
+                    <span>Cancel</span>
+                  </button>
+
                   <button
+                    type="button"
                     onClick={handleSendImage}
                     disabled={isUploadingImage}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow transition disabled:opacity-50"
+                    className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow transition active:scale-95 disabled:opacity-50"
                   >
-                    <Send size={14} />
-                    <span>{isUploadingImage ? (imageUploadStatus || 'Uploading...') : 'Send'}</span>
+                    <Send size={15} />
+                    <span>{isUploadingImage ? (imageUploadStatus || 'Uploading... 1/2') : 'Send'}</span>
                   </button>
                 </div>
               </div>
@@ -864,7 +909,11 @@ export function ChatModal({
             )}
 
             {/* WhatsApp Chat Input Bar */}
-            <form onSubmit={handleSendText} className="p-2.5 bg-[#202c33] border-t border-slate-700/60 flex items-center gap-2 flex-shrink-0 z-10">
+            <form 
+              onSubmit={handleSendText} 
+              className="p-2.5 bg-[#202c33] border-t border-slate-700/60 flex items-center gap-2 flex-shrink-0 z-10 transition-transform duration-100 ease-out"
+              style={keyboardOffset > 0 ? { transform: `translateY(-${keyboardOffset}px)` } : undefined}
+            >
               <input 
                 type="file" 
                 accept="image/*" 

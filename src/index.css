@@ -28,6 +28,12 @@
 html,
 body {
   overscroll-behavior-y: none;
+  background-color: #070D19;
+}
+
+#root {
+  background-color: #070D19;
+  min-height: 100vh;
 }
 
 /* Prevent mobile pull-to-refresh reload while keeping smooth scroll in all containers */
@@ -43,7 +49,7 @@ body {
 }
 
 body {
-  background-color: var(--color-brand-navy-dark);
+  background-color: #070D19;
   color: #E2E8F0;
 }
 

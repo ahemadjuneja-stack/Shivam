@@ -30,6 +30,34 @@ import { ChatModal } from './components/ChatModal';
 import { StaffOrderManagement } from './components/StaffOrderManagement';
 import { useFirebaseSync } from './useFirebaseSync';
 import { Customer, ChatMessage } from './types';
+import { useKeyboardSafeInput } from './utils/mobileKeyboard';
+
+async function enterChatImmersive(): Promise<void> {
+  try {
+    const orientation = screen.orientation as any;
+    if (document.fullscreenElement && orientation?.type?.startsWith('portrait')) {
+      return;
+    }
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      await document.documentElement.requestFullscreen();
+    }
+    if (orientation?.lock) {
+      await orientation.lock('portrait');
+    }
+  } catch (e) {
+    console.warn('[ChatImmersive] orientation lock unavailable — continuing normally:', e);
+  }
+}
+
+async function exitChatImmersive(): Promise<void> {
+  try {
+    const orientation = screen.orientation as any;
+    if (orientation?.unlock) orientation.unlock();
+    if (document.fullscreenElement) await document.exitFullscreen();
+  } catch (e) {
+    console.warn('[ChatImmersive] exit error:', e);
+  }
+}
 
 function VoiceRecorder() {
   const { orderVoiceNote, setOrderVoiceNote, setIsRecordingVoice, setStopVoiceRecordingFn } = useAppStore();
@@ -233,7 +261,49 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const totalUnreadCount = unreadAdminCount + unreadBroadcastCount;
 
   const [showLogin, setShowLogin] = useState(false);
+  const { keyboardOffset } = useKeyboardSafeInput();
+  const [isNoteFocused, setIsNoteFocused] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && isChatOpen) {
+        try {
+          const orientation = screen.orientation as any;
+          if (orientation?.unlock) orientation.unlock();
+        } catch (e) {
+          console.warn('[ChatImmersive] unlock on fullscreen exit error:', e);
+        }
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [isChatOpen]);
+
+  useEffect(() => {
+    if (!isChatOpen) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void enterChatImmersive();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      void enterChatImmersive();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [isChatOpen]);
   const [isStaffOrderManagementActive, setIsStaffOrderManagementActive] = useState(false);
   const [loginId, setLoginId] = useState('');
   const [loginPin, setLoginPin] = useState('');
@@ -385,6 +455,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, [currentCustomer?.customerId, currentCustomer?.customerCode]);
 
   const handleLogoutOrSwitch = useCallback(() => {
+    void exitChatImmersive();
     if (customerDocUnsubRef.current) {
       customerDocUnsubRef.current();
       customerDocUnsubRef.current = null;
@@ -1267,14 +1338,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 )}
               </div>
 
-              {/* Community Hub Button with Real-Time Unread Count Badge */}
+              {/* Chat Box Button with Real-Time Unread Count Badge */}
               <button
                 onClick={() => {
+                  void enterChatImmersive();
                   setIsChatOpen(true);
                   markMessagesAsRead();
                 }}
-                className="relative flex items-center gap-1.5 bg-brand-gold/10 border border-brand-gold/50 hover:bg-brand-gold hover:text-black text-brand-gold px-2.5 py-1 rounded-lg text-[11px] transition font-bold shadow-sm"
-                title="Community Hub & WhatsApp Support Chat"
+                className="relative flex items-center gap-1.5 bg-brand-gold/10 border border-brand-gold/50 hover:bg-brand-gold hover:text-black text-brand-gold px-2 py-1 rounded-lg text-[11px] transition font-bold shadow-sm"
+                title="Chat Box & WhatsApp Support Chat"
               >
                 <div className="relative flex items-center justify-center">
                   <MessageCircle size={14} />
@@ -1284,14 +1356,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
                     </span>
                   )}
                 </div>
-                <span className="hidden xs:inline">Community Hub</span>
+                <span className="text-[9px] font-bold">Chat Box</span>
               </button>
 
               {/* Order Management Toggle Button (Shivam Staff only) */}
               {currentCustomer?.role === 'Shivam Staff' && (
                 <button
                   onClick={() => setIsStaffOrderManagementActive(!isStaffOrderManagementActive)}
-                  className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition font-bold shadow-sm border ${
+                  className={`relative flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition font-bold shadow-sm border ${
                     isStaffOrderManagementActive 
                       ? 'bg-purple-600 text-white border-purple-500' 
                       : 'bg-purple-500/10 border-purple-500/30 hover:bg-purple-600 hover:text-white text-purple-400 animate-pulse'
@@ -1299,19 +1371,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   title="Order Management Packing Workspace"
                 >
                   <ClipboardList size={14} />
-                  <span className="hidden xs:inline">Order Packing</span>
+                  <span className="hidden sm:inline text-[9px] font-bold">Orders</span>
                 </button>
               )}
 
               {/* Customer Switcher / Profile */}
               <button 
                 onClick={openProfileModal}
-                className="flex items-center gap-1 bg-slate-900 border border-slate-700 hover:border-brand-gold px-2.5 py-1 rounded-lg text-[11px] transition"
+                className="flex items-center gap-1 bg-slate-900 border border-slate-700 hover:border-brand-gold px-2 py-1 rounded-lg text-[11px] transition"
               >
                 <UserCircle size={14} className="text-brand-gold" />
                 {currentCustomer ? (
                   <span className="font-bold text-brand-gold-light truncate max-w-[90px]">
-                    {currentCustomer.shopName || currentCustomer.customerId}
+                    {currentCustomer.shopName || currentCustomer.ownerName || 'My Profile'}
                   </span>
                 ) : (
                   <span className="font-bold text-white">Login</span>
@@ -1321,14 +1393,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
               {/* Top Order Slip / Cart Button */}
               <button 
                 onClick={() => setIsCartOpen(true)}
-                className="relative flex items-center justify-center bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black w-7 h-7 rounded-lg transition shadow-md active:scale-95"
+                className="relative flex items-center gap-1 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black px-2 py-1 rounded-lg transition shadow-md active:scale-95"
+                title="View Cart / Order Slip"
               >
-                <ShoppingBag size={16} />
-                {cart.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black rounded-full w-4 h-4 flex items-center justify-center border border-black shadow">
-                    {cart.length}
-                  </span>
-                )}
+                <div className="relative flex items-center justify-center">
+                  <ShoppingBag size={14} />
+                  {cart.length > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] font-black rounded-full min-w-[15px] h-[15px] px-0.5 flex items-center justify-center border border-black shadow">
+                      {cart.length}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[9px] font-bold">Cart</span>
               </button>
             </div>
           </header>
@@ -1449,7 +1525,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
               <div>
                 <div className="text-[10px] text-slate-400 uppercase font-bold">Ordering as:</div>
                 <div className="font-black text-white text-xs">
-                  {currentCustomer ? `${currentCustomer.shopName} (${currentCustomer.customerId || currentCustomer.customerCode})` : 'Not logged in'}
+                  {currentCustomer ? currentCustomer.shopName : 'Not logged in'}
                 </div>
               </div>
               <button
@@ -1463,11 +1539,16 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Notes Section - Can expand flex-1 in landscape */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div 
+              className="flex-1 overflow-y-auto p-4 space-y-4 transition-transform duration-100 ease-out"
+              style={isNoteFocused && keyboardOffset > 0 ? { transform: `translateY(-${keyboardOffset}px)` } : undefined}
+            >
               <div className="flex flex-col gap-2">
                 <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Order Note</label>
                 <textarea
                   value={orderNote}
+                  onFocus={() => setIsNoteFocused(true)}
+                  onBlur={() => setIsNoteFocused(false)}
                   onChange={(e) => setOrderNote(e.target.value)}
                   placeholder="Type any specific instructions for this order here..."
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-gold min-h-[80px] landscape:min-h-[120px] resize-none"
@@ -1566,17 +1647,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <label className="text-[10px] uppercase font-bold text-slate-500">Owner Name</label>
                       <div className="font-medium text-slate-200">{currentCustomer.ownerName || currentCustomer.contactPerson}</div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[10px] uppercase font-bold text-slate-500">Phone</label>
-                        <div className="font-medium text-slate-200">{currentCustomer.phone || currentCustomer.mobileNumber || 'N/A'}</div>
-                      </div>
-                      <div>
-                        <label className="text-[10px] uppercase font-bold text-slate-500">Customer ID</label>
-                        <div className="font-mono font-bold text-brand-gold bg-black/40 px-2 py-0.5 rounded border border-slate-800 inline-block">
-                          {currentCustomer.customerId || currentCustomer.customerCode}
-                        </div>
-                      </div>
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500">Phone</label>
+                      <div className="font-medium text-slate-200">{currentCustomer.phone || currentCustomer.mobileNumber || 'N/A'}</div>
                     </div>
                     <div>
                       <label className="text-[10px] uppercase font-bold text-slate-500">City & Address</label>
@@ -1751,9 +1824,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
                               </div>
                             </button>
                             <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className="font-mono text-xs font-bold text-brand-gold bg-black/40 px-2 py-0.5 rounded">
-                                {cid}
-                              </span>
                               <button
                                 type="button"
                                 onClick={async (e) => {
@@ -1976,7 +2046,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* CHAT & COMMUNITY MODAL */}
-      <ChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+      <ChatModal 
+        isOpen={isChatOpen} 
+        onClose={() => {
+          void exitChatImmersive();
+          setIsChatOpen(false);
+        }} 
+      />
     </div>
   );
 }
