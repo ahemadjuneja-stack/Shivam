@@ -755,9 +755,9 @@ export async function syncMessageToFirebase(message: ChatMessage): Promise<void>
     try {
       const folder: MediaFolder = type === 'voice' ? 'voice_notes' : 'communication';
       const prefix = type === 'voice' ? 'chat_voice' : 'chat_image';
-      mediaUrl = await uploadMediaToStorage(mediaUrl, folder, prefix);
+      mediaUrl = await uploadMediaToStorage(mediaUrl, folder, prefix, 30000);
     } catch (uploadErr) {
-      console.warn('[SyncMessage] Failed to upload media to storage, stripping raw media:', uploadErr);
+      console.error('[ChatImage] upload failed:', uploadErr);
       mediaUrl = '';
     }
   }

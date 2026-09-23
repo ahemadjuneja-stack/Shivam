@@ -6,7 +6,6 @@ import {
   Mic, 
   Square, 
   Trash2, 
-  Check, 
   CheckCheck, 
   Store, 
   Bell, 
@@ -16,13 +15,47 @@ import {
   PlusCircle, 
   Heart, 
   Share2, 
-  Paperclip
+  Paperclip,
+  Download
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { ChatMessage, CommunityPost } from '../types';
 import { AudioMessagePlayer } from './AudioMessagePlayer';
 import { generateMessageId } from '../lib/idGenerator';
-import { uploadMediaToStorage } from '../services/storageService';
+import { uploadMediaToStorage, compressCanvasImage, dataUriToBlob } from '../services/storageService';
+
+function getDateKey(timestamp: number): string {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+function formatDateSeparator(timestamp: number): string {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  const now = new Date();
+
+  const isSameDay = (d1: Date, d2: Date) =>
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate();
+
+  if (isSameDay(d, now)) {
+    return 'Today';
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (isSameDay(d, yesterday)) {
+    return 'Yesterday';
+  }
+
+  return d.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+  });
+}
 
 export function ChatModal({ 
   isOpen, 
@@ -54,9 +87,13 @@ export function ChatModal({
 
   // Direct Chat state
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const [inputMessageText, setInputMessageText] = useState('');
   const [hasText, setHasText] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [imageCaption, setImageCaption] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageUploadStatus, setImageUploadStatus] = useState<string | null>(null);
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
   
   // Voice Recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -86,6 +123,9 @@ export function ChatModal({
     return m.customerCode === 'CUST-GENERAL' || m.customerId === 'CUST-GENERAL' || !m.customerId;
   });
 
+  const unreadDirectCount = chatMessages.filter(m => m.sender === 'admin' && !m.isRead).length;
+  const unreadBroadcastCount = (broadcastMessages || []).filter(b => !b.isReadByCustomer).length;
+
   // Mark all admin messages as read when opening modal or changing tabs
   useEffect(() => {
     if (isOpen) {
@@ -107,12 +147,36 @@ export function ChatModal({
     };
   }, []);
 
+  const handleDownloadChatImage = async (imageUrl: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    if (!imageUrl) return;
+    try {
+      const res = await fetch(imageUrl);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = `shivam_chat_${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error('Failed to download image:', err);
+      // Fallback
+      window.open(imageUrl, '_blank');
+    }
+  };
+
   if (!isOpen) return null;
 
   // 1. Send Text Message
   const handleSend = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const text = chatInputRef.current?.value.trim();
+    const text = (inputMessageText || chatInputRef.current?.value || '').trim();
     if (!text) return;
     
     const msgId = generateMessageId();
@@ -131,6 +195,7 @@ export function ChatModal({
     };
 
     addMessage(newMsg);
+    setInputMessageText('');
     if (chatInputRef.current) {
       chatInputRef.current.value = '';
     }
@@ -154,21 +219,93 @@ export function ChatModal({
 
   // Send Image Message
   const handleSendImage = async () => {
-    if (!selectedImage) return;
+    if (!selectedImage || isUploadingImage) return;
 
     const imageToUpload = selectedImage;
     const caption = imageCaption.trim();
+    setIsUploadingImage(true);
+    setImageUploadStatus("Uploading... 1/2");
+    setChatNotice(null);
+
+    // 1. Client-side canvas compression (max 1280px / quality 0.8) to prevent timeout
+    let uploadBlob: Blob;
+    try {
+      if (typeof imageToUpload === 'string' && imageToUpload.startsWith('data:')) {
+        uploadBlob = dataUriToBlob(imageToUpload);
+      } else if (typeof imageToUpload === 'string') {
+        const res = await fetch(imageToUpload);
+        uploadBlob = await res.blob();
+      } else {
+        uploadBlob = imageToUpload;
+      }
+      uploadBlob = await compressCanvasImage(uploadBlob, 1280, 0.8);
+    } catch (compErr) {
+      console.warn('[ChatImage] Canvas compression fallback:', compErr);
+      if (typeof imageToUpload === 'string' && imageToUpload.startsWith('data:')) {
+        uploadBlob = dataUriToBlob(imageToUpload);
+      } else {
+        uploadBlob = imageToUpload as any;
+      }
+    }
+
+    // 2. Storage upload with 30s timeout and 1 automatic retry
+    let cloudImageUrl = '';
+    try {
+      console.log('[ChatImage] Starting image upload (attempt 1/2)...');
+      cloudImageUrl = await uploadMediaToStorage(uploadBlob, 'communication', 'chat_img', 30000);
+      console.log('[ChatImage] uploaded:', cloudImageUrl);
+    } catch (firstErr) {
+      console.warn('[ChatImage] First upload attempt failed, retrying once...', firstErr);
+      setImageUploadStatus("Uploading... 2/2");
+      try {
+        cloudImageUrl = await uploadMediaToStorage(uploadBlob, 'communication', 'chat_img', 30000);
+        console.log('[ChatImage] uploaded (retry):', cloudImageUrl);
+      } catch (secondErr) {
+        console.error('[ChatImage] upload failed:', secondErr);
+      }
+    }
+
+    setIsUploadingImage(false);
+    setImageUploadStatus(null);
+
+    // 3. CHANGE A & C: If upload failed or URL is empty, do NOT send an empty-media message silently
+    if (!cloudImageUrl || !cloudImageUrl.trim()) {
+      const errorMsg = "Image upload fail hui — dobara try karo";
+      setChatNotice(errorMsg);
+      try {
+        alert(errorMsg);
+      } catch {
+        // window.alert fallback in environments where alert might be blocked
+      }
+
+      // If user typed a caption, send text message so typed text is not lost
+      if (caption) {
+        const textMsgId = generateMessageId();
+        const textMsg: ChatMessage = {
+          id: textMsgId,
+          messageId: textMsgId,
+          customerId: effectiveCustomerId,
+          customerCode: effectiveCustomerId,
+          shopName: effectiveShopName,
+          sender: isAdmin ? 'admin' : 'customer',
+          type: 'text',
+          text: caption,
+          isRead: false,
+          timestamp: Date.now(),
+          createdAt: Date.now()
+        };
+        addMessage(textMsg);
+        setImageCaption('');
+      }
+      return;
+    }
+
+    // 4. Success: Clear preview state
     setSelectedImage(null);
     setImageCaption('');
 
+    // 5. CHANGE B: Contract fields (write ALL variants)
     const msgId = generateMessageId();
-    let cloudImageUrl = '';
-    try {
-      cloudImageUrl = await uploadMediaToStorage(imageToUpload, 'communication', 'chat_img');
-    } catch (err) {
-      console.warn('Failed to upload chat image to Cloud Storage:', err);
-    }
-
     const newMsg: ChatMessage = {
       id: msgId,
       messageId: msgId,
@@ -186,6 +323,7 @@ export function ChatModal({
       createdAt: Date.now()
     };
 
+    console.log('[ChatModal handleSendImage] final image-message object:', JSON.stringify(newMsg));
     addMessage(newMsg);
   };
 
@@ -214,9 +352,29 @@ export function ChatModal({
 
         let cloudAudioUrl = '';
         try {
-          cloudAudioUrl = await uploadMediaToStorage(audioBlob, 'voice_notes', 'chat_voice');
+          console.log('[ChatVoice] Starting voice upload (attempt 1/2)...');
+          cloudAudioUrl = await uploadMediaToStorage(audioBlob, 'voice_notes', 'chat_voice', 30000);
+          console.log('[ChatVoice] uploaded:', cloudAudioUrl);
         } catch (err) {
-          console.warn('Failed to upload chat voice to Cloud Storage:', err);
+          console.warn('[ChatVoice] First upload attempt failed, retrying once...', err);
+          try {
+            cloudAudioUrl = await uploadMediaToStorage(audioBlob, 'voice_notes', 'chat_voice', 30000);
+            console.log('[ChatVoice] uploaded (retry):', cloudAudioUrl);
+          } catch (secondErr) {
+            console.error('[ChatVoice] upload failed completely:', secondErr);
+          }
+        }
+
+        if (!cloudAudioUrl || !cloudAudioUrl.trim()) {
+          const errorMsg = "Voice message upload fail hua — dobara try karein";
+          setMicNotice(errorMsg);
+          try {
+            alert(errorMsg);
+          } catch {
+            // fallback
+          }
+          stream.getTracks().forEach(track => track.stop());
+          return;
         }
 
         const newMsg: ChatMessage = {
@@ -227,6 +385,7 @@ export function ChatModal({
           shopName: effectiveShopName,
           sender: isAdmin ? 'admin' : 'customer',
           type: 'voice',
+          text: undefined,
           mediaUrl: cloudAudioUrl,
           audioUri: cloudAudioUrl,
           audioUrl: cloudAudioUrl,
@@ -234,6 +393,7 @@ export function ChatModal({
           timestamp: Date.now(),
           createdAt: Date.now()
         };
+        console.log('[ChatModal stopAndSendRecording] final voice-message object:', JSON.stringify(newMsg));
         addMessage(newMsg);
         stream.getTracks().forEach(track => track.stop());
       };
@@ -409,13 +569,17 @@ export function ChatModal({
             >
               <MessageSquare size={13} />
               <span>Direct Chat</span>
-              {chatMessages.length > 0 && (
+              {unreadDirectCount > 0 ? (
+                <span className="min-w-[18px] h-[18px] px-1 bg-[#25d366] text-slate-950 text-[10px] font-black rounded-full flex items-center justify-center shadow">
+                  {unreadDirectCount > 99 ? '99+' : unreadDirectCount}
+                </span>
+              ) : chatMessages.length > 0 ? (
                 <span className={`text-[10px] px-1.5 rounded-full font-mono ${
                   activeTab === 'chat' ? 'bg-black/30 text-white' : 'bg-[#111b21] text-slate-400'
                 }`}>
                   {chatMessages.length}
                 </span>
-              )}
+              ) : null}
             </button>
 
             <button
@@ -428,13 +592,17 @@ export function ChatModal({
             >
               <Bell size={13} />
               <span>Broadcasts</span>
-              {broadcastMessages.length > 0 && (
+              {unreadBroadcastCount > 0 ? (
+                <span className="min-w-[18px] h-[18px] px-1 bg-[#25d366] text-slate-950 text-[10px] font-black rounded-full flex items-center justify-center shadow">
+                  {unreadBroadcastCount > 99 ? '99+' : unreadBroadcastCount}
+                </span>
+              ) : broadcastMessages.length > 0 ? (
                 <span className={`text-[10px] px-1.5 rounded-full font-mono ${
                   activeTab === 'broadcast' ? 'bg-black/30 text-white' : 'bg-[#111b21] text-slate-400'
                 }`}>
                   {broadcastMessages.length}
                 </span>
-              )}
+              ) : null}
             </button>
 
             <button
@@ -476,7 +644,7 @@ export function ChatModal({
               
               {/* WhatsApp Security Notice Box */}
               <div className="bg-[#182229] border border-[#222d34] rounded-xl p-2.5 text-center text-[11px] text-[#ffd279] shadow-sm max-w-[92%] mx-auto mb-1">
-                🔒 Messages with Shivam Showroom Admin are private & synced in real-time to the PC Admin Dashboard.
+                🔒 Messages with SHIVAM are private & synced in real-time to the PC Admin Dashboard.
               </div>
 
               {chatMessages.length === 0 && (
@@ -491,80 +659,103 @@ export function ChatModal({
                 </div>
               )}
 
-              {chatMessages.map(msg => {
+              {chatMessages.map((msg, index) => {
                 const isMe = msg.sender === (isAdmin ? 'admin' : 'customer');
-                const timeStr = msg.timestamp 
-                  ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                const rawTime = msg.createdAt ?? msg.timestamp ?? 0;
+                const timeNum = typeof rawTime === 'number' ? rawTime : (rawTime?.toMillis ? rawTime.toMillis() : (rawTime?.seconds ? rawTime.seconds * 1000 : 0));
+                
+                const timeStr = timeNum 
+                  ? new Date(timeNum).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
                   : '';
+
+                // Date separator calculation
+                const currentDateKey = getDateKey(timeNum);
+                const prevRawTime = index > 0 ? (chatMessages[index - 1].createdAt ?? chatMessages[index - 1].timestamp ?? 0) : 0;
+                const prevTimeNum = typeof prevRawTime === 'number' ? prevRawTime : (prevRawTime?.toMillis ? prevRawTime.toMillis() : (prevRawTime?.seconds ? prevRawTime.seconds * 1000 : 0));
+                const prevDateKey = index > 0 ? getDateKey(prevTimeNum) : '';
+                const showDateSeparator = Boolean(currentDateKey && currentDateKey !== prevDateKey);
+                const dateLabel = showDateSeparator ? formatDateSeparator(timeNum) : '';
                 
                 const mediaSource = msg.mediaUrl || msg.imageUri || msg.audioUri;
                 const isVoice = msg.type === 'voice' || !!msg.audioUri;
                 const isImage = msg.type === 'image' || (!isVoice && !!msg.imageUri);
 
                 return (
-                  <div 
-                    key={msg.messageId || msg.id} 
-                    className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-2.5 shadow-md flex flex-col gap-1 transition-all ${
-                      isMe 
-                        ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-xs' 
-                        : 'bg-[#202c33] text-[#e9edef] rounded-tl-xs border border-[#2a3942]'
-                    }`}>
-                      
-                      {/* Sender Header for Incoming Messages */}
-                      {!isMe && (
-                        <div className="flex items-center justify-between gap-2 pb-0.5 border-b border-white/10 text-[10px]">
-                          <span className="font-bold text-emerald-400">
-                            {msg.sender === 'admin' ? 'Shivam Showroom Admin' : (msg.shopName || 'Customer')}
-                          </span>
-                          <span className="text-[9px] text-[#8696a0]">Support</span>
-                        </div>
-                      )}
-
-                      {/* Image Message */}
-                      {isImage && mediaSource && (
-                        <div className="rounded-xl overflow-hidden bg-black/40 border border-black/20 my-0.5">
-                          <img 
-                            src={mediaSource} 
-                            alt="Attachment" 
-                            loading="lazy"
-                            className="w-full max-h-64 object-cover cursor-pointer hover:opacity-95 transition"
-                            onClick={() => window.open(mediaSource, '_blank')}
-                          />
-                        </div>
-                      )}
-
-                      {/* Voice Note Message */}
-                      {isVoice && mediaSource && (
-                        <div className="my-0.5">
-                          <AudioMessagePlayer src={mediaSource} isMe={isMe} />
-                        </div>
-                      )}
-
-                      {/* Text content */}
-                      {msg.text && (
-                        <p dir="ltr" className="text-xs leading-relaxed whitespace-pre-wrap select-text text-left" style={{ direction: 'ltr', textAlign: 'left' }}>
-                          <span>{msg.text}</span>
-                        </p>
-                      )}
-
-                      {/* Timestamp & Read Receipt Checkmarks */}
-                      <div className="flex items-center justify-end gap-1 text-[9px] font-mono text-[#8696a0] mt-0.5">
-                        <span className={isMe ? 'text-emerald-200/80' : 'text-[#8696a0]'}>{timeStr}</span>
-                        {isMe && (
-                          <span title={msg.isRead ? 'Read by Admin' : 'Sent to Dashboard'}>
-                            {msg.isRead ? (
-                              <CheckCheck size={14} className="text-[#53bdeb]" />
-                            ) : (
-                              <Check size={14} className="text-emerald-300" />
-                            )}
-                          </span>
-                        )}
+                  <React.Fragment key={msg.messageId || msg.id || index}>
+                    {/* Date Separator Pill */}
+                    {showDateSeparator && (
+                      <div className="flex justify-center my-2 select-none">
+                        <span className="bg-[#182229] border border-[#222d34] text-[#8696a0] text-[10px] font-semibold px-3 py-1 rounded-lg shadow-sm">
+                          {dateLabel}
+                        </span>
                       </div>
+                    )}
 
+                    <div className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-2.5 shadow-md flex flex-col gap-1 transition-all ${
+                        isMe 
+                          ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none' 
+                          : 'bg-[#202c33] text-[#e9edef] rounded-tl-none border border-[#2a3942]'
+                      }`}>
+                        
+                        {/* Sender Header for Incoming Messages */}
+                        {!isMe && (
+                          <div className="flex items-center justify-between gap-2 pb-0.5 border-b border-white/10 text-[10px]">
+                            <span className="font-bold text-emerald-400">
+                              {msg.sender === 'admin' ? 'SHIVAM' : (msg.shopName || 'Customer')}
+                            </span>
+                            <span className="text-[9px] text-[#8696a0]">Support</span>
+                          </div>
+                        )}
+
+                        {/* Image Message */}
+                        {isImage && mediaSource && (
+                          <div className="relative rounded-xl overflow-hidden bg-black/40 border border-black/20 my-0.5 group">
+                            <img 
+                              src={mediaSource} 
+                              alt="Attachment" 
+                              loading="lazy"
+                              className="w-full max-h-64 object-cover"
+                            />
+                            {/* Download Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleDownloadChatImage(mediaSource, e)}
+                              title="Download image to gallery"
+                              className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-sm transition-all shadow-md active:scale-95"
+                            >
+                              <Download size={15} />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Voice Note Message */}
+                        {isVoice && mediaSource && (
+                          <div className="my-0.5">
+                            <AudioMessagePlayer src={mediaSource} isMe={isMe} />
+                          </div>
+                        )}
+
+                        {/* Text content */}
+                        {msg.text && (
+                          <p dir="ltr" className="text-xs leading-relaxed whitespace-pre-wrap select-text text-left" style={{ direction: 'ltr', textAlign: 'left' }}>
+                            <span>{msg.text}</span>
+                          </p>
+                        )}
+
+                        {/* Timestamp & Double Ticks */}
+                        <div className="flex items-center justify-end gap-1 text-[9px] font-mono text-[#8696a0] mt-0.5">
+                          <span className={isMe ? 'text-emerald-200/80' : 'text-[#8696a0]'}>{timeStr}</span>
+                          {isMe && (
+                            <span title={msg.isRead ? 'Read by Admin' : 'Sent'}>
+                              <CheckCheck size={14} className={msg.isRead ? 'text-[#53bdeb]' : 'text-[#8696a0]'} />
+                            </span>
+                          )}
+                        </div>
+
+                      </div>
                     </div>
-                  </div>
+                  </React.Fragment>
                 );
               })}
               <div ref={messagesEndRef} />
@@ -579,8 +770,14 @@ export function ChatModal({
                     <span>Image Preview</span>
                   </div>
                   <button 
-                    onClick={() => { setSelectedImage(null); setImageCaption(''); }}
-                    className="p-1 hover:text-red-400 text-[#8696a0] transition"
+                    onClick={() => {
+                      if (!isUploadingImage) {
+                        setSelectedImage(null);
+                        setImageCaption('');
+                      }
+                    }}
+                    disabled={isUploadingImage}
+                    className="p-1 hover:text-red-400 text-[#8696a0] transition disabled:opacity-50"
                   >
                     <X size={16} />
                   </button>
@@ -590,13 +787,21 @@ export function ChatModal({
                   <img src={selectedImage} alt="Preview" className="max-h-44 object-contain" />
                 </div>
 
+                {imageUploadStatus && (
+                  <div className="bg-[#182229] border border-emerald-500/40 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold flex items-center justify-center gap-2 animate-pulse">
+                    <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                    <span>{imageUploadStatus}</span>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={imageCaption}
                     onChange={(e) => setImageCaption(e.target.value)}
                     placeholder="Add a caption... (optional)"
-                    className="flex-1 bg-[#202c33] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-[#8696a0] focus:outline-none focus:border-emerald-500"
+                    disabled={isUploadingImage}
+                    className="flex-1 bg-[#202c33] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-[#8696a0] focus:outline-none focus:border-emerald-500 disabled:opacity-50"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -606,10 +811,11 @@ export function ChatModal({
                   />
                   <button
                     onClick={handleSendImage}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow transition"
+                    disabled={isUploadingImage}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow transition disabled:opacity-50"
                   >
                     <Send size={14} />
-                    <span>Send</span>
+                    <span>{isUploadingImage ? (imageUploadStatus || 'Uploading...') : 'Send'}</span>
                   </button>
                 </div>
               </div>
@@ -644,11 +850,16 @@ export function ChatModal({
               </div>
             )}
 
-            {/* Mic Notice (permission/error) */}
-            {micNotice && (
+            {/* Mic / Chat Notice (permission/error) */}
+            {(micNotice || chatNotice) && (
               <div className="bg-amber-950/90 border-t border-amber-500/30 px-3 py-1.5 text-[11px] text-amber-300 flex items-center justify-between flex-shrink-0 z-20">
-                <span>{micNotice}</span>
-                <button onClick={() => setMicNotice(null)} className="text-amber-400 hover:text-white font-bold ml-2">×</button>
+                <span>{chatNotice || micNotice}</span>
+                <button 
+                  onClick={() => { setChatNotice(null); setMicNotice(null); }} 
+                  className="text-amber-400 hover:text-white font-bold ml-2"
+                >
+                  ×
+                </button>
               </div>
             )}
 
@@ -675,7 +886,7 @@ export function ChatModal({
               {/* Text Input Area */}
               <textarea
                 ref={chatInputRef}
-                defaultValue=""
+                value={inputMessageText}
                 rows={1}
                 placeholder="Type a message..."
                 dir="ltr"
@@ -684,7 +895,15 @@ export function ChatModal({
                 spellCheck={false}
                 className="flex-1 bg-[#2a3942] text-white text-left outline-none resize-none px-3.5 py-2 rounded-2xl text-xs placeholder-[#8696a0]"
                 style={{ direction: 'ltr', textAlign: 'left' }}
-                onInput={() => setHasText(Boolean(chatInputRef.current?.value.trim()))}
+                onChange={(e) => {
+                  setInputMessageText(e.target.value);
+                  setHasText(Boolean(e.target.value.trim()));
+                }}
+                onInput={(e) => {
+                  const val = (e.target as HTMLTextAreaElement).value;
+                  setInputMessageText(val);
+                  setHasText(Boolean(val.trim()));
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -694,7 +913,7 @@ export function ChatModal({
               />
 
               {/* Send or Voice Record Action Button */}
-              {hasText ? (
+              {hasText || Boolean(inputMessageText.trim()) ? (
                 <button 
                   type="submit"
                   className="w-10 h-10 rounded-full bg-emerald-600 text-white hover:bg-emerald-500 transition shadow flex items-center justify-center flex-shrink-0 active:scale-95"

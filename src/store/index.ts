@@ -156,6 +156,7 @@ interface AppState {
   clearCart: () => void;
   setCurrentCustomer: (customer: Customer | null) => void;
   placeOrder: () => Promise<boolean>;
+  setMessages: (msgs: ChatMessage[]) => void;
   addMessage: (message: ChatMessage) => void;
   
   // Community Actions
@@ -558,10 +559,14 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      setMessages: (msgs) => set({ messages: msgs }),
+
       addMessage: (message) => {
         syncMessageToFirebase(message).catch((e) => console.error('Firebase sync error for message:', e));
         set((state) => ({
-          messages: [...state.messages, message]
+          messages: state.messages.some(m => m.id === message.id)
+            ? state.messages
+            : [...state.messages, message]
         }));
       },
 

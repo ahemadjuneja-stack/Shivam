@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   X, 
   CheckCircle, 
@@ -22,6 +22,7 @@ import { AudioMessagePlayer } from './AudioMessagePlayer';
 import { DisplayOrderManager } from './DisplayOrderManager';
 import { CustomerManager } from './CustomerManager';
 import { DatabaseCleanManager } from './DatabaseCleanManager';
+import CategoryLoader from './CategoryLoader';
 import { doc, updateDoc, collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { generateMessageId } from '../lib/idGenerator';
 import { db, COLLECTIONS } from '../firebase';
@@ -30,6 +31,7 @@ import { uploadMediaToStorage } from '../services/storageService';
 // Module-level cached orders and load flag outside the component for instant re-visits
 let cachedOrders: WholesaleOrder[] = [];
 let hasLoadedOnce = false;
+let savedManageOrdersScrollTop = 0;
 
 export function StaffOrderManagement() {
   const currentCustomer = useAppStore(state => state.currentCustomer);
@@ -163,42 +165,62 @@ export function StaffOrderManagement() {
   };
 
   // Filtered and sorted orders list for Manage Orders screen
-  const displayedManageOrders = orders
-    .filter(order => {
-      const presentDepts = getPresentDepartmentsFromItems(order);
+  const parseOrderTime = (v: any): number => {
+    if (!v) return 0;
+    if (typeof v === 'object' && typeof v.toMillis === 'function') {
+      return v.toMillis();
+    }
+    if (typeof v === 'object' && typeof v.seconds === 'number') {
+      return v.seconds * 1000 + (v.nanoseconds ? Math.floor(v.nanoseconds / 1000000) : 0);
+    }
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+    const parsed = new Date(v).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
 
-      if (manageCategoryFilter !== 'all') {
-        // Order must contain items of the selected department
-        if (!presentDepts.includes(manageCategoryFilter)) {
-          return false;
-        }
+  const filteredManageOrders = orders.filter(order => {
+    const presentDepts = getPresentDepartmentsFromItems(order);
 
-        const isDeptDone = isDepartmentDone(order, manageCategoryFilter);
-        const overallStatus = getOrderStatusState(order);
-
-        // Status filter applies to the selected department's own status
-        if (manageStatusFilter === 'pending') {
-          return !isDeptDone;
-        } else if (manageStatusFilter === 'in_progress') {
-          return !isDeptDone && overallStatus === 'IN_PROGRESS';
-        } else if (manageStatusFilter === 'done') {
-          return isDeptDone;
-        }
-        return true; // 'all'
-      } else {
-        // With 'All Categories', use overall order status
-        const overallStatus = getOrderStatusState(order);
-
-        if (manageStatusFilter === 'pending') {
-          return overallStatus === 'PENDING' || overallStatus === 'IN_PROGRESS';
-        } else if (manageStatusFilter === 'in_progress') {
-          return overallStatus === 'IN_PROGRESS';
-        } else if (manageStatusFilter === 'done') {
-          return overallStatus === 'DONE';
-        }
-        return true; // 'all'
+    if (manageCategoryFilter !== 'all') {
+      // Order must contain items of the selected department
+      if (!presentDepts.includes(manageCategoryFilter)) {
+        return false;
       }
-    })
+
+      const isDeptDone = isDepartmentDone(order, manageCategoryFilter);
+      const overallStatus = getOrderStatusState(order);
+
+      // Status filter applies to the selected department's own status
+      if (manageStatusFilter === 'pending') {
+        return !isDeptDone;
+      } else if (manageStatusFilter === 'in_progress') {
+        return !isDeptDone && overallStatus === 'IN_PROGRESS';
+      } else if (manageStatusFilter === 'done') {
+        return isDeptDone;
+      }
+      return true; // 'all'
+    } else {
+      // With 'All Categories', use overall order status
+      const overallStatus = getOrderStatusState(order);
+
+      if (manageStatusFilter === 'pending') {
+        return overallStatus === 'PENDING' || overallStatus === 'IN_PROGRESS';
+      } else if (manageStatusFilter === 'in_progress') {
+        return overallStatus === 'IN_PROGRESS';
+      } else if (manageStatusFilter === 'done') {
+        return overallStatus === 'DONE';
+      }
+      return true; // 'all'
+    }
+  });
+
+  const now = Date.now();
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+  // Group A: orders younger than 24h, IN_PROGRESS first then others, each group sorted by createdAt desc
+  const groupA = filteredManageOrders
+    .filter(order => parseOrderTime(order.createdAt) >= now - ONE_DAY_MS)
     .sort((a, b) => {
       const statusA = getOrderStatusState(a);
       const statusB = getOrderStatusState(b);
@@ -211,14 +233,70 @@ export function StaffOrderManagement() {
       if (statusA === 'PENDING' && statusB === 'DONE') return -1;
       if (statusA === 'DONE' && statusB === 'PENDING') return 1;
 
-      const timeA = new Date(a.createdAt || 0).getTime();
-      const timeB = new Date(b.createdAt || 0).getTime();
-      return timeB - timeA;
+      return parseOrderTime(b.createdAt) - parseOrderTime(a.createdAt);
     });
+
+  // Group B: orders older than 24h, strictly createdAt desc
+  const groupB = filteredManageOrders
+    .filter(order => parseOrderTime(order.createdAt) < now - ONE_DAY_MS)
+    .sort((a, b) => parseOrderTime(b.createdAt) - parseOrderTime(a.createdAt));
+
+  // Final list = Group A followed by Group B
+  const displayedManageOrders = [...groupA, ...groupB];
 
   // Active order selection & packing split-view selection
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [selectedOrderForPacking, setSelectedOrderForPacking] = useState<WholesaleOrder | null>(null);
+
+  // Ref to the scrollable orders-list container
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const scrollThrottleTimeoutRef = useRef<any>(null);
+
+  // Throttled scroll listener to continuously keep savedManageOrdersScrollTop accurate
+  const handleListScroll = useCallback(() => {
+    if (scrollThrottleTimeoutRef.current) return;
+    scrollThrottleTimeoutRef.current = setTimeout(() => {
+      scrollThrottleTimeoutRef.current = null;
+      if (listContainerRef.current) {
+        savedManageOrdersScrollTop = listContainerRef.current.scrollTop;
+      }
+    }, 150);
+  }, []);
+
+  const handleCategoryFilterChange = (val: 'all' | 'cosmetics' | 'imitation' | 'hair') => {
+    savedManageOrdersScrollTop = 0;
+    if (listContainerRef.current) {
+      listContainerRef.current.scrollTop = 0;
+    }
+    setManageCategoryFilter(val);
+  };
+
+  const handleStatusFilterChange = (val: 'all' | 'pending' | 'in_progress' | 'done') => {
+    savedManageOrdersScrollTop = 0;
+    if (listContainerRef.current) {
+      listContainerRef.current.scrollTop = 0;
+    }
+    setManageStatusFilter(val);
+  };
+
+  // Restore scroll position when returning to the Manage Orders list
+  useEffect(() => {
+    if (workspaceMode === 'manageOrders' && !selectedOrderForPacking && !isLoading) {
+      let isMounted = true;
+      const frame1 = requestAnimationFrame(() => {
+        const frame2 = requestAnimationFrame(() => {
+          if (isMounted && listContainerRef.current && savedManageOrdersScrollTop > 0) {
+            listContainerRef.current.scrollTop = savedManageOrdersScrollTop;
+          }
+        });
+        return () => cancelAnimationFrame(frame2);
+      });
+      return () => {
+        isMounted = false;
+        cancelAnimationFrame(frame1);
+      };
+    }
+  }, [workspaceMode, selectedOrderForPacking, isLoading]);
 
   // Helper to determine item department
   const getItemDepartment = (item: any): 'imitation' | 'cosmetics' | 'hair' | 'other' => {
@@ -447,6 +525,23 @@ export function StaffOrderManagement() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [customerChatMessages.length]);
+
+  // Mark customer messages as read in Firestore when admin/staff opens order chat
+  useEffect(() => {
+    if (activeOrder) {
+      const cid = activeOrder.customerId;
+      const unreadCust = messages.filter(
+        m => (m.customerId === cid || m.customerCode === cid) && m.sender === 'customer' && !m.isRead
+      );
+      if (unreadCust.length > 0) {
+        unreadCust.forEach(m => {
+          if (m.id) {
+            updateDoc(doc(db, 'chat_messages', m.id), { isRead: true, read: true }).catch(console.warn);
+          }
+        });
+      }
+    }
+  }, [activeOrder?.customerId, messages]);
 
   // Quick Chat actions
   const handleSendTextMessage = (e?: React.FormEvent) => {
@@ -809,36 +904,36 @@ export function StaffOrderManagement() {
           </div>
         </div>
       ) : workspaceMode === 'manageOrders' ? (
-        <div className="flex-1 flex flex-col overflow-hidden bg-slate-950 p-4 sm:p-6 text-slate-100">
-          {/* Combined Header & Modern Horizontal Scrollable Filter Toolbar */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800/80 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black text-white tracking-wide">Manage Orders</h2>
+        <div className="flex-1 flex flex-col overflow-hidden bg-slate-950 px-3 sm:px-6 pt-1 sm:pt-2 pb-3 text-slate-100">
+          {/* Compact Sticky Header & Filter Toolbar */}
+          <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur-md flex items-center justify-between gap-2 py-2 mb-2 border-b border-slate-800/80 flex-shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <h2 className="text-base font-bold text-white tracking-wide">Manage Orders</h2>
             </div>
 
             {/* Two Dropdown Controls (Pill Style) */}
-            <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               {/* Department Dropdown Pill */}
               <div className="relative inline-flex items-center">
                 <select
                   value={manageCategoryFilter}
-                  onChange={(e) => setManageCategoryFilter(e.target.value as 'all' | 'cosmetics' | 'imitation' | 'hair')}
-                  className="appearance-none bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold text-xs rounded-full px-4 py-1.5 pr-8 cursor-pointer shadow-md shadow-amber-500/20 focus:outline-none transition-all duration-200"
+                  onChange={(e) => handleCategoryFilterChange(e.target.value as 'all' | 'cosmetics' | 'imitation' | 'hair')}
+                  className="appearance-none bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold text-[11px] sm:text-xs rounded-full px-2.5 sm:px-3 py-1 pr-6 sm:pr-7 cursor-pointer shadow-md shadow-amber-500/20 focus:outline-none transition-all duration-200"
                 >
                   <option value="all" className="bg-slate-900 text-white font-semibold">All Categories</option>
                   <option value="cosmetics" className="bg-slate-900 text-white font-semibold">Cosmetics</option>
                   <option value="imitation" className="bg-slate-900 text-white font-semibold">Imitation Jewelry</option>
                   <option value="hair" className="bg-slate-900 text-white font-semibold">Hair Accessories</option>
                 </select>
-                <ChevronDown size={14} className="absolute right-2.5 text-slate-950 pointer-events-none" />
+                <ChevronDown size={12} className="absolute right-2 text-slate-950 pointer-events-none" />
               </div>
 
               {/* Status Dropdown Pill */}
               <div className="relative inline-flex items-center">
                 <select
                   value={manageStatusFilter}
-                  onChange={(e) => setManageStatusFilter(e.target.value as 'all' | 'pending' | 'in_progress' | 'done')}
-                  className={`appearance-none font-bold text-xs rounded-full px-4 py-1.5 pr-8 cursor-pointer shadow-md focus:outline-none transition-all duration-200 ${
+                  onChange={(e) => handleStatusFilterChange(e.target.value as 'all' | 'pending' | 'in_progress' | 'done')}
+                  className={`appearance-none font-bold text-[11px] sm:text-xs rounded-full px-2.5 sm:px-3 py-1 pr-6 sm:pr-7 cursor-pointer shadow-md focus:outline-none transition-all duration-200 ${
                     manageStatusFilter === 'pending'
                       ? 'bg-purple-600 text-white shadow-purple-600/30'
                       : manageStatusFilter === 'in_progress'
@@ -853,17 +948,20 @@ export function StaffOrderManagement() {
                   <option value="done" className="bg-slate-900 text-white font-semibold">Done</option>
                   <option value="all" className="bg-slate-900 text-white font-semibold">All</option>
                 </select>
-                <ChevronDown size={14} className={`absolute right-2.5 pointer-events-none ${manageStatusFilter === 'in_progress' ? 'text-slate-950' : 'text-white'}`} />
+                <ChevronDown size={12} className={`absolute right-2 pointer-events-none ${manageStatusFilter === 'in_progress' ? 'text-slate-950' : 'text-white'}`} />
               </div>
             </div>
           </div>
 
           {/* Scrollable Order Row Cards List */}
-          <div className="space-y-3 flex-1 overflow-y-auto max-h-[calc(100vh-220px)] pr-1 scrollbar-thin">
+          <div 
+            ref={listContainerRef}
+            onScroll={handleListScroll}
+            className="space-y-2.5 flex-1 overflow-y-auto max-h-[calc(100vh-140px)] pr-1 scrollbar-thin"
+          >
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-2">
-                <div className="w-8 h-8 border-4 border-slate-800 border-t-amber-500 rounded-full animate-spin" />
-                <p className="text-xs font-bold text-slate-400">Loading orders...</p>
+                <CategoryLoader label="Loading orders..." />
               </div>
             ) : displayedManageOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-2">
@@ -877,16 +975,19 @@ export function StaffOrderManagement() {
                 const itemCount = order.totalItemsCount || order.items?.length || 0;
                 const city = order.cityName || 'N/A';
                 const shopName = order.shopName || 'Unknown Shop';
-                const orderNum = order.orderNumber || `#${(order.orderId || order.id || '').substring(0, 6).toUpperCase()}`;
+                const orderNum = (order.orderNumber || (order.orderId || order.id || '').substring(0, 6).toUpperCase()).replace(/^#+/, '');
 
                 return (
                   <div
                     key={order.orderId || order.id}
                     onClick={() => {
+                      if (listContainerRef.current) {
+                        savedManageOrdersScrollTop = listContainerRef.current.scrollTop;
+                      }
                       setSelectedOrderId(order.orderId || order.id);
                       setSelectedOrderForPacking(order);
                     }}
-                    className="bg-brand-navy-card border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer transition shadow-md group hover:bg-slate-900/60"
+                    className="bg-brand-navy-card border border-slate-800 hover:border-slate-700 rounded-xl p-3 sm:p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-2.5 cursor-pointer transition shadow-md group hover:bg-slate-900/60"
                   >
                     {/* Customer/Shop Info */}
                     <div className="flex items-center gap-3 min-w-[240px]">
@@ -960,9 +1061,7 @@ export function StaffOrderManagement() {
         </div>
       ) : isLoading ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-500">
-          <div className="w-8 h-8 border-4 border-slate-800 border-t-amber-500 rounded-full animate-spin mb-3" />
-          <h3 className="font-bold text-base text-slate-300">Loading Orders...</h3>
-          <p className="text-xs text-slate-500 mt-1">Synchronizing with Firestore database...</p>
+          <CategoryLoader label="Loading orders..." />
         </div>
       ) : !activeOrder ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-500">

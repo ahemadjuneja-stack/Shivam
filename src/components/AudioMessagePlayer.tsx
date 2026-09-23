@@ -18,8 +18,28 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ src, isM
     if (!audio) return;
 
     const onLoadedMetadata = () => {
-      if (audio.duration && !isNaN(audio.duration)) {
-        setDuration(audio.duration);
+      const d = audio.duration;
+      if (typeof d === 'number' && !isNaN(d) && d !== Infinity && d > 0) {
+        setDuration(d);
+      } else {
+        // Chrome WebM fix for Infinity or NaN duration on recorded audio
+        const onTimeUpdateDuration = () => {
+          audio.removeEventListener('timeupdate', onTimeUpdateDuration);
+          const detected = audio.duration;
+          if (typeof detected === 'number' && !isNaN(detected) && detected !== Infinity && detected > 0) {
+            setDuration(detected);
+          }
+          audio.currentTime = 0;
+        };
+        audio.addEventListener('timeupdate', onTimeUpdateDuration);
+        audio.currentTime = 1e101;
+      }
+    };
+
+    const onDurationChange = () => {
+      const d = audio.duration;
+      if (typeof d === 'number' && !isNaN(d) && d !== Infinity && d > 0) {
+        setDuration(d);
       }
     };
 
@@ -33,11 +53,13 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ src, isM
     };
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    audio.addEventListener('durationchange', onDurationChange);
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('ended', onEnded);
 
     return () => {
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+      audio.removeEventListener('durationchange', onDurationChange);
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('ended', onEnded);
     };
@@ -72,7 +94,7 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ src, isM
   };
 
   const formatTime = (secs: number) => {
-    if (isNaN(secs) || secs === 0) return '0:00';
+    if (isNaN(secs) || secs === Infinity || secs <= 0) return '0:00';
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${m}:${s < 10 ? '0' : ''}${s}`;
@@ -111,7 +133,7 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ src, isM
 
         <div className="flex justify-between items-center text-[10px] font-mono leading-none">
           <span className={isMe ? 'text-slate-200' : 'text-slate-400'}>
-            {isPlaying ? formatTime(currentTime) : (duration > 0 ? formatTime(duration) : 'Voice note')}
+            {isPlaying ? formatTime(currentTime) : (duration > 0 && duration !== Infinity ? formatTime(duration) : '0:00')}
           </span>
           
           <button

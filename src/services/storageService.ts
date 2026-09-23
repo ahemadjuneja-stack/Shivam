@@ -1,7 +1,7 @@
 import { storage, uploadMediaToStorage, type MediaFolder } from '../firebase';
 import { compressCanvasImage, dataUriToBlob, uploadBlobToStorage } from './migrateBase64ToStorage';
 
-export { storage, uploadMediaToStorage, type MediaFolder };
+export { storage, uploadMediaToStorage, compressCanvasImage, dataUriToBlob, type MediaFolder };
 
 /**
  * Guard that prevents writing inline base64 string fields to Firestore

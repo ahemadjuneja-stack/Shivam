@@ -29,7 +29,7 @@ import { getToken, onMessage } from 'firebase/messaging';
 import { ChatModal } from './components/ChatModal';
 import { StaffOrderManagement } from './components/StaffOrderManagement';
 import { useFirebaseSync } from './useFirebaseSync';
-import { Customer } from './types';
+import { Customer, ChatMessage } from './types';
 
 function VoiceRecorder() {
   const { orderVoiceNote, setOrderVoiceNote, setIsRecordingVoice, setStopVoiceRecordingFn } = useAppStore();
@@ -222,9 +222,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const currentCustId = currentCustomer?.customerId || currentCustomer?.customerCode || 'CUST-GENERAL';
   
   // Real-time unread count: admin messages for this specific customer + unread broadcasts
-  const unreadAdminCount = messages.filter(
-    m => (m.customerId === currentCustId || m.customerCode === currentCustId) && m.sender === 'admin' && !m.isRead
-  ).length;
+  const unreadAdminCount = messages.filter(m => {
+    const isThisCustomer = (currentCustomer?.customerId && (m.customerId === currentCustomer.customerId || m.customerCode === currentCustomer.customerId)) ||
+      (currentCustomer?.customerCode && (m.customerId === currentCustomer.customerCode || m.customerCode === currentCustomer.customerCode)) ||
+      (m.customerId === currentCustId || m.customerCode === currentCustId);
+    return isThisCustomer && m.sender === 'admin' && !m.isRead;
+  }).length;
 
   const unreadBroadcastCount = (broadcastMessages || []).filter(b => !b.isReadByCustomer).length;
   const totalUnreadCount = unreadAdminCount + unreadBroadcastCount;
@@ -316,18 +319,85 @@ function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [currentCustomer?.id, currentCustomer?.customerId, currentCustomer?.customerCode, subscribeCustomerDoc]);
 
+  useEffect(() => {
+    const custId = currentCustomer?.customerId || currentCustomer?.customerCode;
+    if (!custId) return;
+
+    let cancelled = false;
+    const normalizeMsg = (id: string, data: any): ChatMessage => {
+      const img = data.mediaUrl || data.imageUri || data.imageUrl || data.image || '';
+      const audio = data.audioUri || data.audioUrl || data.mediaUrl || '';
+      let created = 0;
+      const rawTime = data.createdAt ?? data.timestamp ?? 0;
+      if (typeof rawTime === 'number') created = rawTime;
+      else if (rawTime && typeof rawTime.toMillis === 'function') created = rawTime.toMillis();
+      else if (typeof rawTime === 'string') created = new Date(rawTime).getTime() || 0;
+      const text = data.text || data.message || data.content || '';
+      let type = (data.type || '').toLowerCase();
+      if (type !== 'image' && type !== 'voice' && type !== 'text') {
+        type = img ? 'image' : (audio && !img ? 'voice' : 'text');
+      }
+      return {
+        id, messageId: id,
+        customerId: data.customerId || data.customerCode || id,
+        customerCode: data.customerCode || data.customerId || id,
+        shopName: data.shopName || '',
+        sender: data.sender || 'customer',
+        type, text,
+        mediaUrl: type === 'image' ? img : (type === 'voice' ? audio : ''),
+        imageUri: type === 'image' ? img : undefined,
+        imageUrl: type === 'image' ? img : undefined,
+        audioUri: type === 'voice' ? audio : undefined,
+        isRead: !!data.isRead,
+        createdAt: created,
+      } as ChatMessage;
+    };
+
+    const mergeAndSet = (a: any[], b: any[]) => {
+      if (cancelled) return;
+      const map = new Map<string, ChatMessage>();
+      [...a, ...b].forEach(d => {
+        const m = normalizeMsg(d.id, d.data());
+        if (m.id) {
+          map.set(m.id, m); // Firestore doc id dedupes customerId/customerCode overlap
+        }
+      });
+      const sorted = Array.from(map.values())
+        .filter(m => m.customerCode === custId || m.customerId === custId)
+        .sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0));
+      // Merge with locally-echoed messages not yet in Firestore (dedupe by id/messageId)
+      const local = useAppStore.getState().messages;
+      const fireIds = new Set(sorted.map(m => m.id || m.messageId || '').filter(Boolean));
+      const extra = local.filter(m => !fireIds.has(m.id || '') && !fireIds.has(m.messageId || ''));
+      useAppStore.getState().setMessages([...sorted, ...extra]);
+    };
+
+    const col = collection(db, 'chat_messages');
+    const q1 = query(col, where('customerId', '==', custId));
+    const q2 = query(col, where('customerCode', '==', custId));
+    let snapA: any[] = []; let snapB: any[] = [];
+    const unsub1 = onSnapshot(q1, (s) => { snapA = s.docs; mergeAndSet(snapA, snapB); }, 
+      (err) => console.warn('[ChatSync] q1 error:', err));
+    const unsub2 = onSnapshot(q2, (s) => { snapB = s.docs; mergeAndSet(snapA, snapB); }, 
+      (err) => console.warn('[ChatSync] q2 error:', err));
+
+    return () => { cancelled = true; unsub1(); unsub2(); };
+  }, [currentCustomer?.customerId, currentCustomer?.customerCode]);
+
   const handleLogoutOrSwitch = useCallback(() => {
     if (customerDocUnsubRef.current) {
       customerDocUnsubRef.current();
       customerDocUnsubRef.current = null;
     }
     setCurrentCustomer(null);
+    useAppStore.getState().setMessages([]);
     try {
       const raw = localStorage.getItem('shivam-wholesale-session-v9');
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed?.state) {
           parsed.state.currentCustomer = null;
+          parsed.state.messages = [];
           localStorage.setItem('shivam-wholesale-session-v9', JSON.stringify(parsed));
         }
       }
@@ -941,11 +1011,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
             {/* 3. Hair Accessories */}
             <div className="flex flex-col items-center gap-2">
               <div className="animate-wave-3 w-12 h-12 rounded-full border border-brand-gold/30 bg-brand-gold/5 flex items-center justify-center text-brand-gold transition-all duration-300">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="7" r="2" />
-                  <path d="M11 8.5C9 10 6 12 6 15c0 3 3 4 3 4" />
-                  <path d="M13 8.5C15 10 18 12 18 15c0 3-3 4-3 4" />
-                  <path d="M9 15h6M7 12c2 .5 8 .5 10 0" />
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 12L5.5 8.8C4.4 8.2 3.5 8.9 3.5 10.1v3.8c0 1.2.9 1.9 2 1.3L11 12z" />
+                  <path d="M13 12l5.5-3.2c1.1-.6 2 .1 2 1.3v3.8c0 1.2-.9 1.9-2 1.3L13 12z" />
+                  <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
                 </svg>
               </div>
               <span className="text-[10px] font-semibold tracking-wide text-slate-400 select-none whitespace-nowrap">Hair Accessories</span>
@@ -1210,7 +1279,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="relative flex items-center justify-center">
                   <MessageCircle size={14} />
                   {totalUnreadCount > 0 && (
-                    <span className="absolute -top-2 -right-2 min-w-[16px] h-4 px-1 bg-red-600 text-white text-[9px] font-black rounded-full flex items-center justify-center border border-black shadow animate-pulse">
+                    <span className="absolute -top-2 -right-2 min-w-[16px] h-4 px-1 bg-[#25d366] text-slate-950 text-[9px] font-black rounded-full flex items-center justify-center border border-black shadow">
                       {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
                     </span>
                   )}
