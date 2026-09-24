@@ -354,6 +354,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
       exited = false;
       lastT = e.timeStamp;
       scroller = findScroller(e.target);
+      if (!scroller) {
+        const se = document.scrollingElement as HTMLElement | null;
+        if (se && se.scrollHeight > se.clientHeight + 2) scroller = se;
+      }
       st0 = scroller ? scroller.scrollTop : 0;
       pos = st0;
       lastApplied = st0;

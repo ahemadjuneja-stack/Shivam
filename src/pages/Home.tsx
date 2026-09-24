@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store';
 import { 
@@ -70,6 +70,9 @@ export function Home() {
     ...photos.filter(p => !!p.videoUri && !showroomVideos.some(v => v.id === p.id || v.videoUri === p.videoUri))
   ];
 
+  const zoomApiRef = useRef<any>(null);
+  const lastTapRef = useRef<{ t: number; x: number; y: number }>({ t: 0, x: 0, y: 0 });
+  const tapProbeRef = useRef<HTMLDivElement | null>(null);
   const [isZoomedIn, setIsZoomedIn] = useState(false);
   const [slideDirection, setSlideDirection] = useState(0);
 
@@ -524,6 +527,7 @@ export function Home() {
             className="absolute w-full h-full"
           >
             <TransformWrapper
+              ref={zoomApiRef}
               key={photo?.id || photo?.imageUri}
               initialScale={1}
               minScale={1}
@@ -531,9 +535,10 @@ export function Home() {
               centerOnInit={true}
               limitToBounds={true}
               wheel={{ disabled: true }}
-              doubleClick={{ disabled: false, mode: 'toggle', step: 2.5, animationTime: 250 }}
+              doubleClick={{ disabled: true }}
               pinch={{ step: 5 }}
               panning={{ disabled: !isZoomedIn, velocityDisabled: true }}
+              onInit={(ref: any) => { zoomApiRef.current = ref; }}
               onTransform={(ref: any) => {
                 setIsZoomedIn(ref.state.scale > 1.05);
               }}
@@ -546,6 +551,27 @@ export function Home() {
                   loading="lazy"
                   decoding="async"
                   draggable={false}
+                  onTouchEnd={(e: React.TouchEvent) => {
+                    const api = zoomApiRef.current;
+                    const t = e.changedTouches[0];
+                    const now = Date.now();
+                    const lt = lastTapRef.current;
+                    const isDouble = now - lt.t < 300 && Math.hypot(t.clientX - lt.x, t.clientY - lt.y) < 40;
+                    lastTapRef.current = { t: now, x: t.clientX, y: t.clientY };
+                    const inst = api && api.instanceRef ? api.instanceRef.current : null;
+                    const scale = inst ? inst.state.scale : -1;
+                    if (tapProbeRef.current) {
+                      tapProbeRef.current.textContent = `dbltap:${isDouble ? 'YES' : 'no'} api:${api ? 'OK' : 'NULL'} scale:${scale.toFixed(2)}`;
+                    }
+                    if (!isDouble || !api) return;
+                    lastTapRef.current = { t: 0, x: 0, y: 0 };
+                    e.stopPropagation();
+                    if (scale > 1.05) {
+                      api.resetTransform(250);
+                    } else {
+                      api.centerView ? api.centerView(2.5, 250) : api.zoomIn(2.5, 250);
+                    }
+                  }}
                   className="allow-pointer w-full h-full object-contain pointer-events-auto cursor-zoom-in"
                 />
               </TransformComponent>
@@ -560,6 +586,8 @@ export function Home() {
             <span>{qtyFeedback}</span>
           </div>
         )}
+
+        <div ref={tapProbeRef} style={{position:'fixed',top:8,left:8,zIndex:2147483647,background:'#000',color:'#4ade80',font:'10px monospace',padding:'2px 6px',borderRadius:4,border:'1px solid #f87171'}}>no taps</div>
       </div>
 
       {/* RIGHT: COMPACT SIDE PANEL FOR ABCD (With Gallery button, Product Code, ABCD, and Cart icon) */}
