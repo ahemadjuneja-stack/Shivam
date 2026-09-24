@@ -357,7 +357,8 @@ export function useFirebaseSync() {
               id: data.id || d.id,
               title: data.title || data.name || '',
               videoUri: data.videoUri || data.videoUrl || data.url || '',
-              thumbnailUrl: data.thumbnailUrl || data.imageUrl || '',
+              thumbnailUrl: data.thumbnailUrl || data.imageUrl || data.imageUri || data.posterUrl || '',
+              quantity: typeof data.quantity === 'number' ? data.quantity : 0,
               sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0
             };
           });

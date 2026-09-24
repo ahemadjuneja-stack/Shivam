@@ -243,16 +243,16 @@ export function Home() {
                 <button
                   key={cat.id}
                   onClick={() => handleSelectCategory(cat.id)}
-                  className="group w-full flex flex-col gap-3 p-3 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-all duration-200 hover:scale-[1.01] active:scale-[0.98] text-center shadow-lg focus:outline-none touch-pan-y"
+                  className="group w-full flex flex-col gap-3 p-3 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-colors duration-200 text-center shadow-lg focus:outline-none"
                 >
-                  <div className="w-full aspect-[16/10] sm:aspect-video rounded-xl overflow-hidden bg-black border-2 border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center touch-pan-y">
+                  <div className="w-full aspect-[16/10] sm:aspect-video rounded-xl overflow-hidden bg-black border-2 border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center">
                     <img
                       src={cat.thumbnailUrl?.includes('images.unsplash.com') ? cat.thumbnailUrl.replace('w=1280', 'w=640') : cat.thumbnailUrl}
                       alt={cat.displayName}
                       loading="lazy"
                       decoding="async"
                       draggable={false}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 touch-pan-y"
+                      className="w-full h-full object-cover"
                     />
                   </div>
                   <div className="flex items-center justify-center gap-2 py-1.5 flex-shrink-0">
@@ -291,7 +291,7 @@ export function Home() {
               setScreenMode('home');
               setShowroomScreenMode('home');
             }}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition active:scale-95 border border-slate-700/60 shadow-sm"
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition border border-slate-700/60 shadow-sm"
           >
             <ArrowLeft size={16} className="text-brand-gold" />
             <span>Categories</span>
@@ -334,17 +334,17 @@ export function Home() {
                 <button
                   key={sub.id}
                   onClick={() => handleSelectSubCategory(sub.id)}
-                  className="group flex flex-col gap-2 transition-all duration-200 hover:scale-[1.02] active:scale-95 text-center focus:outline-none touch-pan-y"
+                  className="group flex flex-col gap-2 transition-colors duration-200 text-center focus:outline-none"
                 >
                   {/* 1. Strict 16:9 Thumbnail Image (Pure image, no text/folder icons over it) */}
-                  <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg touch-pan-y">
+                  <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg">
                     <img
                       src={sub.thumbnailUrl?.includes('images.unsplash.com') ? sub.thumbnailUrl.replace('w=1280', 'w=640') : sub.thumbnailUrl}
                       alt={sub.name}
                       loading="lazy"
                       decoding="async"
                       draggable={false}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 touch-pan-y"
+                      className="w-full h-full object-cover"
                     />
                   </div>
 
@@ -378,7 +378,7 @@ export function Home() {
               setScreenMode('subcategories');
               setShowroomScreenMode('subcategories');
             }}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition active:scale-95 border border-slate-700/60 shadow-sm"
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition border border-slate-700/60 shadow-sm"
           >
             <ArrowLeft size={16} className="text-brand-gold" />
             <span>Subcategories</span>
@@ -416,7 +416,7 @@ export function Home() {
                   <div
                     key={photo.id}
                     onClick={() => handleOpenFullImage(photo)}
-                    className="group relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-brand-gold cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 shadow-lg flex items-center justify-center touch-pan-y"
+                    className="group relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-brand-gold cursor-pointer transition-colors duration-200 shadow-lg flex items-center justify-center"
                   >
                     {/* Clean 16:9 Photo Thumbnail */}
                     <img
@@ -428,7 +428,7 @@ export function Home() {
                       loading="lazy"
                       decoding="async"
                       draggable={false}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 touch-pan-y"
+                      className="w-full h-full object-cover"
                     />
 
                     {/* Ordered Badge if already in cart */}
@@ -448,7 +448,7 @@ export function Home() {
               <div className="col-span-full flex justify-center py-6">
                 <button
                   onClick={() => loadMorePhotosFn()}
-                  className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-brand-gold font-bold text-xs border border-slate-700 transition active:scale-95 shadow-lg flex items-center gap-2"
+                  className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-brand-gold font-bold text-xs border border-slate-700 transition shadow-lg flex items-center gap-2"
                 >
                   <span>Load More Products</span>
                 </button>
@@ -537,7 +537,7 @@ export function Home() {
                   loading="lazy"
                   decoding="async"
                   draggable={false}
-                  className="w-full h-full object-contain pointer-events-auto cursor-zoom-in"
+                  className="allow-pointer w-full h-full object-contain pointer-events-auto cursor-zoom-in"
                 />
               </TransformComponent>
             </TransformWrapper>
@@ -564,7 +564,7 @@ export function Home() {
                 setScreenMode('gallery');
                 setShowroomScreenMode('gallery');
               }}
-              className="flex-1 landscape:w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700/80 transition active:scale-95 shadow-sm"
+              className="flex-1 landscape:w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700/80 transition shadow-sm"
               title="Back to Gallery"
             >
               <ArrowLeft size={13} className="text-brand-gold" />
@@ -619,7 +619,7 @@ export function Home() {
                       }
                     }}
                     disabled={currentQty === 0}
-                    className={`min-w-fit px-3 py-1.5 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center shadow transition active:scale-95 whitespace-nowrap ${
+                    className={`min-w-fit px-3 py-1.5 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center shadow transition whitespace-nowrap ${
                       currentQty > 0 
                         ? `${badge.bg} ${badge.text} cursor-pointer font-black` 
                         : 'bg-[#1e293b] text-white border border-[#334155] cursor-default'
@@ -638,7 +638,7 @@ export function Home() {
                         handleUpdateQty(photo, variant.key, target);
                       }}
                       disabled={currentQty <= 0}
-                      className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center transition rounded-l-md active:scale-90 ${
+                      className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center transition rounded-l-md ${
                         currentQty > 0 
                           ? 'bg-slate-800 hover:bg-slate-700 text-slate-100' 
                           : 'bg-slate-900 text-slate-600 opacity-40 cursor-not-allowed'
@@ -659,7 +659,7 @@ export function Home() {
                         const target = currentQty === 0 ? minQty : currentQty + minQty;
                         handleUpdateQty(photo, variant.key, target);
                       }}
-                      className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-500 hover:bg-amber-400 active:bg-amber-300 text-black flex items-center justify-center transition font-black rounded-r-md active:scale-90 shadow-sm"
+                      className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-500 hover:bg-amber-400 active:bg-amber-300 text-black flex items-center justify-center transition font-black rounded-r-md shadow-sm"
                       title={`Add ${minQty} pcs`}
                     >
                       <Plus size={13} strokeWidth={3} />
@@ -673,7 +673,7 @@ export function Home() {
           {/* BOTTOM: Cart Button with ShoppingBag Icon */}
           <button
             onClick={() => setIsCartOpen(true)}
-            className="w-full flex items-center justify-center gap-2 py-3 landscape:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-sm landscape:text-xs shadow-lg transition active:scale-95 border border-amber-400/50 flex-shrink-0"
+            className="w-full flex items-center justify-center gap-2 py-3 landscape:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-sm landscape:text-xs shadow-lg transition border border-amber-400/50 flex-shrink-0"
             title="Open Order Slip / Cart"
           >
             <ShoppingBag size={16} className="landscape:w-[14px] landscape:h-[14px]" />

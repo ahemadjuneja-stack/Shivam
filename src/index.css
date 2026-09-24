@@ -38,7 +38,6 @@ body {
 
 /* Prevent mobile pull-to-refresh reload while keeping smooth scroll in all containers */
 * {
-  overscroll-behavior-y: contain;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -58,6 +57,19 @@ img {
   user-select: none;
   -webkit-user-drag: none;
   -webkit-touch-callout: none;
-  touch-action: pan-y;
+  pointer-events: none;
+}
+
+.allow-pointer {
+  pointer-events: auto;
+}
+
+* {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 

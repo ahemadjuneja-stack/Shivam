@@ -740,13 +740,13 @@ export function ChatModal({
 
                         {/* Image Message */}
                         {isImage && mediaSource && (
-                          <div className="relative rounded-xl overflow-hidden bg-black/40 border border-black/20 my-0.5 group touch-pan-y">
+                          <div className="relative rounded-xl overflow-hidden bg-black/40 border border-black/20 my-0.5 group">
                             <img 
                               src={mediaSource} 
                               alt="Attachment" 
                               loading="lazy"
                               draggable={false}
-                              className="w-full max-h-64 object-cover touch-pan-y"
+                              className="w-full max-h-64 object-cover"
                             />
                             {/* Download Button */}
                             <button
@@ -803,12 +803,12 @@ export function ChatModal({
                 style={keyboardOffset > 0 ? { transform: `translateY(-${keyboardOffset}px)` } : undefined}
               >
                 {/* Small image preview (max-h-40, object-contain, centered) */}
-                <div className="relative rounded-xl overflow-hidden max-h-40 landscape:max-h-24 bg-black/60 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0 touch-pan-y">
+                <div className="relative rounded-xl overflow-hidden max-h-40 landscape:max-h-24 bg-black/60 border border-slate-800 flex items-center justify-center p-1 flex-shrink-0">
                   <img 
                     src={selectedImage} 
                     alt="Preview" 
                     draggable={false}
-                    className="max-h-40 landscape:max-h-24 w-auto object-contain mx-auto rounded-lg touch-pan-y" 
+                    className="max-h-40 landscape:max-h-24 w-auto object-contain mx-auto rounded-lg" 
                   />
                 </div>
 
@@ -1026,8 +1026,8 @@ export function ChatModal({
                   </div>
 
                   {item.imageUrl && (
-                    <div className="rounded-xl overflow-hidden max-h-60 border border-slate-700/80 bg-black/40 touch-pan-y">
-                      <img src={item.imageUrl} alt="Broadcast Attachment" draggable={false} className="w-full object-cover max-h-60 touch-pan-y" />
+                    <div className="rounded-xl overflow-hidden max-h-60 border border-slate-700/80 bg-black/40">
+                      <img src={item.imageUrl} alt="Broadcast Attachment" draggable={false} className="w-full object-cover max-h-60" />
                     </div>
                   )}
 
@@ -1072,8 +1072,8 @@ export function ChatModal({
                 />
 
                 {postImagePreview && (
-                  <div className="relative rounded-xl overflow-hidden max-h-48 border border-slate-700 touch-pan-y">
-                    <img src={postImagePreview} alt="Preview" draggable={false} className="w-full h-full object-cover touch-pan-y" />
+                  <div className="relative rounded-xl overflow-hidden max-h-48 border border-slate-700">
+                    <img src={postImagePreview} alt="Preview" draggable={false} className="w-full h-full object-cover" />
                     <button
                       type="button"
                       onClick={() => setPostImagePreview(null)}

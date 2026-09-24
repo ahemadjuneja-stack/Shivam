@@ -157,6 +157,7 @@ export interface ShowroomVideo {
   subCategoryId?: string;
   categoryId?: string;
   title?: string;
+  quantity?: number;
   sortOrder?: number;
 }
 

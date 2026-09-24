@@ -42,17 +42,17 @@ export function CategoryGallery() {
           <Link
             key={sub.id}
             to={`/subcategory/${sub.id}`}
-            className="group flex flex-col gap-2 transition-all duration-200 hover:scale-[1.02] active:scale-95 text-center focus:outline-none touch-pan-y"
+            className="group flex flex-col gap-2 transition-colors duration-200 text-center focus:outline-none"
           >
             {/* 1. Strict 16:9 Thumbnail Image */}
-            <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg touch-pan-y">
+            <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg">
               <img
                 src={sub.thumbnailUrl?.includes('images.unsplash.com') ? sub.thumbnailUrl.replace('w=1280', 'w=640') : sub.thumbnailUrl}
                 alt={sub.name}
                 loading="lazy"
                 decoding="async"
                 draggable={false}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 touch-pan-y"
+                className="w-full h-full object-cover"
               />
             </div>
 

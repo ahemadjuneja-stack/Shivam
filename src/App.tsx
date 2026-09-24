@@ -305,55 +305,139 @@ function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [isChatOpen]);
 
-  // Hardened Pull-to-Refresh guard: only preventDefault when gesture is clearly a pull-down at top of scroller
   useEffect(() => {
-    let startY = 0;
+    const isFormField = (el: EventTarget | null) => {
+      const t = el as HTMLElement | null;
+      if (!t || !t.tagName) return false;
+      return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable === true;
+    };
+    const onContextMenu = (e: MouseEvent) => { if (!isFormField(e.target)) e.preventDefault(); };
+    const onDragStart = (e: DragEvent) => { if (!isFormField(e.target)) e.preventDefault(); };
+
+    let scroller: HTMLElement | null = null;
+    let st0 = 0, startY = 0, lastY = 0, moved = 0;
+    let active = false;
+    let pos = 0, lastApplied = 0, velY = 0, lastT = 0;
+    let yielded = false;
+    let exited = false;
+
+    const findScroller = (start: EventTarget | null): HTMLElement | null => {
+      let node = start as HTMLElement | null;
+      while (node && node !== document.documentElement) {
+        if (node.nodeType === 1) {
+          const cs = window.getComputedStyle(node);
+          if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 2) return node;
+        }
+        node = node.parentElement;
+      }
+      return null;
+    };
+
+    const maxScroll = () => (scroller ? scroller.scrollHeight - scroller.clientHeight : 0);
+
+    const apply = () => {
+      if (!scroller) return;
+      if (pos < 0) pos = 0;
+      const mx = maxScroll();
+      if (pos > mx) pos = mx;
+      lastApplied = Math.round(pos);
+      scroller.scrollTop = lastApplied;
+    };
 
     const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        startY = e.touches[0].clientY;
-      }
+      active = false;
+      if (e.touches.length !== 1) return;
+      startY = lastY = e.touches[0].clientY;
+      moved = 0;
+      velY = 0;
+      yielded = false;
+      exited = false;
+      lastT = e.timeStamp;
+      scroller = findScroller(e.target);
+      st0 = scroller ? scroller.scrollTop : 0;
+      pos = st0;
+      lastApplied = st0;
+      if (scroller) scroller.style.scrollBehavior = 'auto';
     };
 
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length !== 1) return;
-      const currentY = e.touches[0].clientY;
-      const pullDownDistance = currentY - startY;
+      const y = e.touches[0].clientY;
+      const dy = lastY - y;
+      moved = Math.max(moved, Math.abs(y - startY));
 
-      // Find the nearest scrollable ancestor element from touch target
-      let target = e.target as HTMLElement | null;
-      let scroller: HTMLElement | null = null;
-      while (target && target !== document.body && target !== document.documentElement) {
-        const style = window.getComputedStyle(target);
-        const overflowY = style.overflowY;
-        if ((overflowY === 'auto' || overflowY === 'scroll') && target.scrollHeight > target.clientHeight) {
-          scroller = target;
-          break;
-        }
-        target = target.parentElement;
+      if (!scroller) return;
+
+      if (!exited && (Math.abs(velY) > 0.9 || Math.abs(dy) > 14)) exited = true;
+      if (exited) {
+        if (active) { active = false; pos = scroller.scrollTop; lastApplied = scroller.scrollTop; }
+        lastY = y;
+        return;
       }
 
-      const scrollTop = scroller ? scroller.scrollTop : (document.scrollingElement?.scrollTop ?? 0);
+      // velocity estimate (px per ms), smoothed
+      const dt = Math.max(1, e.timeStamp - lastT);
+      lastT = e.timeStamp;
+      velY = 0.7 * velY + 0.3 * (dy / dt);
 
-      // Only preventDefault when BOTH:
-      // (e.touches[0].clientY - startY) > 10   ← clear downward pull, not jitter
-      // AND the found scroller's scrollTop <= 0
-      // Finger moving up, small jitters (<10px), and scroller-not-at-top must always be allowed.
-      if (pullDownDistance > 10 && scrollTop <= 0) {
-        if (e.cancelable) {
-          e.preventDefault();
-        }
+      if (!active) {
+        if (Math.abs(scroller.scrollTop - st0) > 3) { lastY = y; return; } // native engaged — dormant
+        if (moved > 10 && !exited && Math.abs(scroller.scrollTop - st0) < 0.5) {
+          active = true;
+          pos = scroller.scrollTop;
+          lastApplied = scroller.scrollTop;
+        } else { lastY = y; return; }
       }
+
+      // sustained-drift yield: only if native moved >12px beyond our last write
+      if (yielded) {
+        lastY = y;
+        return;
+      }
+      if (Math.abs(scroller.scrollTop - lastApplied) > 12) {
+        yielded = true;
+        pos = scroller.scrollTop;
+        lastApplied = scroller.scrollTop;
+        lastY = y;
+        return;
+      }
+
+      // predicted position: current delta + one frame ahead of finger velocity
+      const predict = dy + Math.max(-14, Math.min(14, velY * 16));
+      pos += predict;
+      apply();
+      lastY = y;
     };
 
-    document.addEventListener('touchstart', onTouchStart, { passive: true });
-    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    const onTouchEnd = () => {
+      if (scroller) scroller.style.scrollBehavior = '';
+      if (active) {
+        active = false;
+        pos = scroller ? scroller.scrollTop : pos;
+        lastApplied = scroller ? scroller.scrollTop : lastApplied;
+      }
+    };
+    const onTouchCancel = () => {
+      if (scroller) scroller.style.scrollBehavior = '';
+      active = false;
+    };
 
+    document.addEventListener('contextmenu', onContextMenu);
+    document.addEventListener('dragstart', onDragStart);
+    document.addEventListener('touchstart', onTouchStart, { passive: true });
+    document.addEventListener('touchmove', onTouchMove, { passive: true });
+    document.addEventListener('touchend', onTouchEnd, { passive: true });
+    document.addEventListener('touchcancel', onTouchCancel, { passive: true });
     return () => {
+      document.removeEventListener('contextmenu', onContextMenu);
+      document.removeEventListener('dragstart', onDragStart);
       document.removeEventListener('touchstart', onTouchStart);
       document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('touchend', onTouchEnd);
+      document.removeEventListener('touchcancel', onTouchCancel);
     };
   }, []);
+
   const [isStaffOrderManagementActive, setIsStaffOrderManagementActive] = useState(false);
   const [loginId, setLoginId] = useState('');
   const [loginPin, setLoginPin] = useState('');

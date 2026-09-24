@@ -272,9 +272,8 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
     >
       {/* ----------------- SLIDER TRACK ----------------- */}
       <div 
-        className="relative w-full h-full flex touch-pan-y"
+        className="relative w-full h-full flex"
         style={{
-          touchAction: 'pan-y',
           transform: `translateX(calc(-${currentIndex * 100}% + ${dragOffset}px))`,
           transition: isDragging.current ? 'none' : 'transform 400ms cubic-bezier(0.25, 1, 0.5, 1)'
         }}
@@ -288,8 +287,8 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
           return (
             <div 
               key={photo.id}
-              className="relative w-full h-full flex-shrink-0 bg-black flex items-center justify-center overflow-hidden touch-pan-y"
-              style={{ width: '100%', touchAction: 'pan-y' }}
+              className="relative w-full h-full flex-shrink-0 bg-black flex items-center justify-center overflow-hidden"
+              style={{ width: '100%' }}
             >
               {videoUrl ? (
                 <video
@@ -305,7 +304,7 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
                   loop={false}
                   onTimeUpdate={isCurrent ? handleTimeUpdate : undefined}
                   onEnded={isCurrent ? handleVideoEnded : undefined}
-                  className="w-full h-full object-cover sm:object-contain bg-black cursor-pointer touch-pan-y"
+                  className="w-full h-full object-cover sm:object-contain bg-black cursor-pointer"
                   onClick={togglePlayPause}
                 />
               ) : (
@@ -315,7 +314,7 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
                   loading="lazy"
                   decoding="async"
                   draggable={false}
-                  className="w-full h-full object-contain touch-pan-y"
+                  className="w-full h-full object-contain"
                 />
               )}
             </div>

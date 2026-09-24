@@ -46,8 +46,8 @@ export function SubCategoryGallery() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
         {photos.map(photo => (
-          <div key={photo.id} className="bg-brand-navy-card rounded-xl border border-slate-700 overflow-hidden shadow-lg touch-pan-y">
-            <div className="aspect-video bg-slate-900 relative touch-pan-y">
+          <div key={photo.id} className="bg-brand-navy-card rounded-xl border border-slate-700 overflow-hidden shadow-lg">
+            <div className="aspect-video bg-slate-900 relative">
               <img 
                 src={(() => {
                   const url = photo.thumbnailUrl || photo.imageUri;
@@ -57,7 +57,7 @@ export function SubCategoryGallery() {
                 loading="lazy" 
                 decoding="async" 
                 draggable={false}
-                className="w-full h-full object-cover touch-pan-y" 
+                className="w-full h-full object-cover"
               />
               <div className="absolute top-2 left-2 bg-black/80 text-white font-mono text-xs px-2 py-1 rounded border border-slate-600">
                 {photo.photoCode}
@@ -106,7 +106,7 @@ export function SubCategoryGallery() {
                           }
                         }}
                         disabled={currentQty === 0}
-                        className={`text-center font-bold rounded py-1 border border-slate-700 select-none transition active:scale-95 text-xs sm:text-sm whitespace-nowrap min-w-fit px-2 ${
+                        className={`text-center font-bold rounded py-1 border border-slate-700 select-none transition text-xs sm:text-sm whitespace-nowrap min-w-fit px-2 ${
                           currentQty > 0 
                             ? `${badge.bg} ${badge.text} cursor-pointer font-black` 
                             : 'bg-[#1e293b] text-white border border-[#334155] cursor-default'
@@ -124,7 +124,7 @@ export function SubCategoryGallery() {
                             setItemQuantity(photo, variant.key, target);
                           }}
                           disabled={currentQty <= 0}
-                          className={`w-8 h-8 flex items-center justify-center rounded font-bold transition active:scale-90 ${
+                          className={`w-8 h-8 flex items-center justify-center rounded font-bold transition ${
                             currentQty > 0 
                               ? 'bg-slate-800 hover:bg-slate-700 text-slate-200' 
                               : 'bg-slate-900 text-slate-600 opacity-40 cursor-not-allowed'
@@ -144,7 +144,7 @@ export function SubCategoryGallery() {
                             const target = currentQty === 0 ? minQty : currentQty + minQty;
                             setItemQuantity(photo, variant.key, target);
                           }}
-                          className="w-8 h-8 flex items-center justify-center rounded bg-amber-500 hover:bg-amber-400 text-black font-black transition active:scale-90"
+                          className="w-8 h-8 flex items-center justify-center rounded bg-amber-500 hover:bg-amber-400 text-black font-black transition"
                           title={`Add ${minQty} pcs`}
                         >
                           <Plus size={13} strokeWidth={3} />
@@ -157,7 +157,7 @@ export function SubCategoryGallery() {
                           onClick={() => {
                             setItemQuantity(photo, variant.key, minQty);
                           }}
-                          className="w-full bg-brand-gold hover:bg-brand-gold-light active:scale-95 text-black font-black text-xs py-2 rounded-lg flex items-center justify-center gap-1 transition shadow"
+                          className="w-full bg-brand-gold hover:bg-brand-gold-light text-black font-black text-xs py-2 rounded-lg flex items-center justify-center gap-1 transition shadow"
                         >
                           Add Pack
                         </button>
