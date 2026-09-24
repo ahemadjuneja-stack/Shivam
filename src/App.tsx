@@ -457,6 +457,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const categories = useAppStore(state => state.categories);
   const [isInitializing, setIsInitializing] = useState(true);
 
+  useEffect(() => {
+    const t = setTimeout(() => setIsInitializing(false), 4000);
+    return () => clearTimeout(t);
+  }, []);
+
   const isApprovedStatus = (status?: string) => {
     const s = (status || '').toLowerCase().trim();
     return s === 'approved' || s === 'verified';

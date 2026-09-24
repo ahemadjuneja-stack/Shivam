@@ -524,6 +524,23 @@ export function Home() {
                 e.stopPropagation();
               }
             }}
+            onTouchEnd={(e: React.TouchEvent) => {
+              const api = zoomApiRef.current;
+              const t = e.changedTouches[0];
+              if (!t) return;
+              const now = Date.now();
+              const lt = lastTapRef.current;
+              const isDouble = now - lt.t < 350 && Math.hypot(t.clientX - lt.x, t.clientY - lt.y) < 60;
+              lastTapRef.current = { t: now, x: t.clientX, y: t.clientY };
+              const scale = api && api.state && typeof api.state.scale === 'number' ? api.state.scale : -1;
+              if (tapProbeRef.current) {
+                tapProbeRef.current.textContent = `dbltap:${isDouble?'YES':'no'} api:${api?'OK':'NULL'} scale:${scale.toFixed(2)}`;
+              }
+              if (!isDouble || !api) return;
+              lastTapRef.current = { t: 0, x: 0, y: 0 };
+              if (scale > 1.05) { api.resetTransform(250); }
+              else { api.centerView ? api.centerView(2.5, 250) : api.zoomIn(2.5, 250); }
+            }}
             className="absolute w-full h-full"
           >
             <TransformWrapper
@@ -551,27 +568,6 @@ export function Home() {
                   loading="lazy"
                   decoding="async"
                   draggable={false}
-                  onTouchEnd={(e: React.TouchEvent) => {
-                    const api = zoomApiRef.current;
-                    const t = e.changedTouches[0];
-                    const now = Date.now();
-                    const lt = lastTapRef.current;
-                    const isDouble = now - lt.t < 300 && Math.hypot(t.clientX - lt.x, t.clientY - lt.y) < 40;
-                    lastTapRef.current = { t: now, x: t.clientX, y: t.clientY };
-                    const inst = api && api.instanceRef ? api.instanceRef.current : null;
-                    const scale = inst ? inst.state.scale : -1;
-                    if (tapProbeRef.current) {
-                      tapProbeRef.current.textContent = `dbltap:${isDouble ? 'YES' : 'no'} api:${api ? 'OK' : 'NULL'} scale:${scale.toFixed(2)}`;
-                    }
-                    if (!isDouble || !api) return;
-                    lastTapRef.current = { t: 0, x: 0, y: 0 };
-                    e.stopPropagation();
-                    if (scale > 1.05) {
-                      api.resetTransform(250);
-                    } else {
-                      api.centerView ? api.centerView(2.5, 250) : api.zoomIn(2.5, 250);
-                    }
-                  }}
                   className="allow-pointer w-full h-full object-contain pointer-events-auto cursor-zoom-in"
                 />
               </TransformComponent>
