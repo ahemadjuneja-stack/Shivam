@@ -72,6 +72,7 @@ export function Home() {
 
   const zoomApiRef = useRef<any>(null);
   const lastTapRef = useRef<{ t: number; x: number; y: number }>({ t: 0, x: 0, y: 0 });
+  const pinchLockRef = useRef(false);
   const [isZoomedIn, setIsZoomedIn] = useState(false);
   const [slideDirection, setSlideDirection] = useState(0);
   const photo = selectedPhoto || galleryPhotos[0];
@@ -81,6 +82,7 @@ export function Home() {
       try { zoomApiRef.current.resetTransform(0); } catch {}
     }
     setIsZoomedIn(false);
+    pinchLockRef.current = false;
   }, [photo?.id, photo?.imageUri]);
 
   // Feedback notification
@@ -519,10 +521,23 @@ export function Home() {
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.3}
             onDragEnd={(_, { offset }: any) => {
+              if (pinchLockRef.current) {
+                return;
+              }
               if (offset.x < -25) {
                 handleNextPhoto();
               } else if (offset.x > 25) {
                 handlePrevPhoto();
+              }
+            }}
+            onTouchStart={(e: React.TouchEvent) => {
+              if (e.touches.length >= 2) {
+                pinchLockRef.current = true;
+              }
+            }}
+            onPointerMoveCapture={(e) => {
+              if (pinchLockRef.current) {
+                e.stopPropagation();
               }
             }}
             onTouchMoveCapture={(e: React.TouchEvent) => {
@@ -531,6 +546,9 @@ export function Home() {
               }
             }}
             onTouchEnd={(e: React.TouchEvent) => {
+              if (e.touches.length === 0) {
+                pinchLockRef.current = false;
+              }
               const api = zoomApiRef.current;
               const t = e.changedTouches[0];
               if (!t) return;
