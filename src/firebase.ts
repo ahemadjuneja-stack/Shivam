@@ -108,7 +108,7 @@ export async function uploadMediaToStorage(
 export const FIRESTORE_DATABASE_ID = firebaseConfig.firestoreDatabaseId || "ai-studio-shivam-6138ca5c-1e3b-412f-957d-d52501eff503";
 
 export const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true
+  experimentalForceLongPolling: true
 }, FIRESTORE_DATABASE_ID);
 
 
@@ -207,7 +207,9 @@ export async function testFirestoreConnection(): Promise<boolean> {
 }
 
 if (typeof window !== 'undefined') {
-  testFirestoreConnection().catch(() => {});
+  setTimeout(() => {
+    testFirestoreConnection().catch(() => {});
+  }, 1500);
 }
 
 /* ==========================================================================

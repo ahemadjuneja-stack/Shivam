@@ -199,24 +199,35 @@ function VoiceRecorder() {
   );
 }
 
-async function reverseGeocode(latitude: number, longitude: number) {
+async function reverseGeocode(latitude: number, longitude: number): Promise<{ city: string; taluka: string }> {
+  // 1. Try backend proxy first (handles headers and CORS on server-side)
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
-      headers: {
-        'Accept-Language': 'en',
-        'User-Agent': 'ShivamApp/1.0'
-      }
-    });
+    const res = await fetch(`/api/reverse-geocode?lat=${latitude}&lon=${longitude}`);
     if (res.ok) {
       const data = await res.json();
-      const address = data.address || {};
-      const city = address.city || address.town || address.village || address.suburb || '';
-      const taluka = address.county || address.state_district || address.city_district || '';
+      if (data && (data.city || data.taluka)) {
+        return { city: data.city || '', taluka: data.taluka || '' };
+      }
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+
+  // 2. Direct client-side fallback via BigDataCloud (CORS-friendly, no custom forbidden headers)
+  try {
+    const fallbackRes = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+    );
+    if (fallbackRes.ok) {
+      const bdcData = await fallbackRes.json();
+      const city = bdcData?.city || bdcData?.locality || bdcData?.principalSubdivision || '';
+      const taluka = bdcData?.locality || bdcData?.principalSubdivision || '';
       return { city, taluka };
     }
-  } catch (e) {
-    console.error('Reverse geocode error:', e);
+  } catch {
+    // Non-blocking fallback
   }
+
   return { city: '', taluka: '' };
 }
 

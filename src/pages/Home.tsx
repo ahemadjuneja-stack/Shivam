@@ -72,9 +72,16 @@ export function Home() {
 
   const zoomApiRef = useRef<any>(null);
   const lastTapRef = useRef<{ t: number; x: number; y: number }>({ t: 0, x: 0, y: 0 });
-  const tapProbeRef = useRef<HTMLDivElement | null>(null);
   const [isZoomedIn, setIsZoomedIn] = useState(false);
   const [slideDirection, setSlideDirection] = useState(0);
+  const photo = selectedPhoto || galleryPhotos[0];
+
+  useEffect(() => {
+    if (zoomApiRef.current) {
+      try { zoomApiRef.current.resetTransform(0); } catch {}
+    }
+    setIsZoomedIn(false);
+  }, [photo?.id, photo?.imageUri]);
 
   // Feedback notification
   const [qtyFeedback, setQtyFeedback] = useState<string | null>(null);
@@ -470,7 +477,6 @@ export function Home() {
      - Finger se slide / swipe karne par image change hoti hai.
      - Gallery button, Product code, aur Cart icon ABCD ke panel me integrate hain.
      ----------------------------------------------------------------------------------- */
-  const photo = selectedPhoto || galleryPhotos[0];
 
   return (
     <div className="w-full h-full flex flex-col landscape:flex-row gap-2 rounded-2xl bg-brand-navy-dark border border-slate-800 overflow-hidden shadow-2xl select-none items-stretch">
@@ -533,9 +539,6 @@ export function Home() {
               const isDouble = now - lt.t < 350 && Math.hypot(t.clientX - lt.x, t.clientY - lt.y) < 60;
               lastTapRef.current = { t: now, x: t.clientX, y: t.clientY };
               const scale = api && api.state && typeof api.state.scale === 'number' ? api.state.scale : -1;
-              if (tapProbeRef.current) {
-                tapProbeRef.current.textContent = `dbltap:${isDouble?'YES':'no'} api:${api?'OK':'NULL'} scale:${scale.toFixed(2)}`;
-              }
               if (!isDouble || !api) return;
               lastTapRef.current = { t: 0, x: 0, y: 0 };
               if (scale > 1.05) { api.resetTransform(250); }
@@ -544,8 +547,7 @@ export function Home() {
             className="absolute w-full h-full"
           >
             <TransformWrapper
-              ref={zoomApiRef}
-              key={photo?.id || photo?.imageUri}
+              ref={(instance: any) => { if (instance) zoomApiRef.current = instance; }}
               initialScale={1}
               minScale={1}
               maxScale={4}
@@ -582,8 +584,6 @@ export function Home() {
             <span>{qtyFeedback}</span>
           </div>
         )}
-
-        <div ref={tapProbeRef} style={{position:'fixed',top:8,left:8,zIndex:2147483647,background:'#000',color:'#4ade80',font:'10px monospace',padding:'2px 6px',borderRadius:4,border:'1px solid #f87171'}}>no taps</div>
       </div>
 
       {/* RIGHT: COMPACT SIDE PANEL FOR ABCD (With Gallery button, Product Code, ABCD, and Cart icon) */}

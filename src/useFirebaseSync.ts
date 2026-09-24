@@ -326,7 +326,11 @@ export function useFirebaseSync() {
           setSyncStatus('synced');
         },
         (err) => {
-          console.error('[Categories Sync Error]', err);
+          if (isTransientConnectionError(err)) {
+            console.warn('[Categories Sync Notice] Reconnecting:', err.message || err);
+          } else {
+            console.error('[Categories Sync Error]', err);
+          }
           handleFirestoreError(err, OperationType.GET, COLLECTIONS.CATEGORIES);
           useAppStore.setState({ syncError: isTransientConnectionError(err) ? null : String(err.message || err) });
           setSyncStatus(isTransientConnectionError(err) ? 'synced' : 'error');
@@ -365,7 +369,11 @@ export function useFirebaseSync() {
           useAppStore.setState({ showroomVideos: vids });
         },
         (err) => {
-          console.error('[ShowroomVideos Sync Error]', err);
+          if (isTransientConnectionError(err)) {
+            console.warn('[ShowroomVideos Sync Notice] Reconnecting:', err.message || err);
+          } else {
+            console.error('[ShowroomVideos Sync Error]', err);
+          }
           handleFirestoreError(err, OperationType.GET, COLLECTIONS.SHOWROOM_VIDEOS);
           useAppStore.setState({ syncError: isTransientConnectionError(err) ? null : String(err.message || err) });
         }

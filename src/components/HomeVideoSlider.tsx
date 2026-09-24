@@ -243,9 +243,6 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
   if (totalVideos === 0) {
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center bg-slate-900/60 rounded-2xl border border-slate-800 p-4 text-center">
-        <div style={{position:'absolute',top:4,right:4,zIndex:50,background:'#000',color:'#4ade80',font:'9px monospace',padding:'2px 4px',borderRadius:4,maxWidth:'95%',wordBreak:'break-all'}}>
-          {`VIDDBG raw=${videos.length} ok=${totalVideos} u0=${String(getVideoUrl(videos[0] as any)).slice(0,60)} p0=${String((videos[0] as any)?.thumbnailUrl ?? '').slice(0,30)}`}
-        </div>
         <Sparkles className="w-8 h-8 text-brand-gold mb-2 animate-pulse" />
         <p className="text-sm font-bold text-slate-300">Loading catalog videos...</p>
       </div>
@@ -273,9 +270,6 @@ export function HomeVideoSlider({ videos, onSelectPhoto }: HomeVideoSliderProps)
         }
       }}
     >
-      <div style={{position:'absolute',top:4,right:4,zIndex:50,background:'#000',color:'#4ade80',font:'9px monospace',padding:'2px 4px',borderRadius:4,maxWidth:'95%',wordBreak:'break-all'}}>
-        {`VIDDBG raw=${videos.length} ok=${totalVideos} u0=${String(getVideoUrl(videos[0] as any)).slice(0,60)} p0=${String((videos[0] as any)?.thumbnailUrl ?? '').slice(0,30)}`}
-      </div>
       {/* ----------------- SLIDER TRACK ----------------- */}
       <div 
         className="relative w-full h-full flex"
