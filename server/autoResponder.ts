@@ -1,6 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
 import { db, COLLECTIONS } from '../src/firebase';
-import { collection, onSnapshot, query, where, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, serverTimestamp, setLogLevel } from 'firebase/firestore';
+
+try {
+  setLogLevel('silent');
+} catch {}
 
 export function initGeminiAutoResponder() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -12,19 +16,18 @@ export function initGeminiAutoResponder() {
   const ai = new GoogleGenAI({ apiKey });
   const processedMessageIds = new Set<string>();
 
-  console.log('Initializing Gemini Auto-Responder listener on chat_messages...');
+  console.log('Initializing Gemini Auto-Responder service on chat_messages...');
 
-  let unsubscribe: (() => void) | null = null;
-  let reconnectTimer: NodeJS.Timeout | null = null;
+  let isChecking = false;
 
-  const startListener = () => {
+  const checkNewMessages = async () => {
+    if (isChecking) return;
+    isChecking = true;
     try {
       const messagesCol = collection(db, COLLECTIONS.MESSAGES);
-      
-      unsubscribe = onSnapshot(messagesCol, async (snapshot) => {
-    for (const change of snapshot.docChanges()) {
-      if (change.type === 'added') {
-        const msgDoc = change.doc;
+      const snapshot = await getDocs(messagesCol);
+
+      for (const msgDoc of snapshot.docs) {
         const data = msgDoc.data() as any;
         const msgId = data.id || data.messageId || msgDoc.id;
 
@@ -72,8 +75,8 @@ export function initGeminiAutoResponder() {
               const t = oData.createdAt || 0;
               if (t >= latestTime) {
                 latestTime = t;
-                latestOrder = oData;
               }
+              latestOrder = oData;
             });
 
             if (latestOrder) {
@@ -101,7 +104,7 @@ STRICT RULES:
             : `No active order found. Generate response for no pending order.`;
 
           const response = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
               systemInstruction,
@@ -165,22 +168,18 @@ STRICT RULES:
           console.error('Error saving auto-responder reply to Firestore:', saveErr);
         }
       }
-    }
-  }, (err) => {
-    console.warn('Auto-responder Firestore listener stream notice (reconnecting):', err.message);
-    if (unsubscribe) {
-      try { unsubscribe(); } catch {}
-      unsubscribe = null;
-    }
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(startListener, 5000);
-  });
-    } catch (err) {
-      console.warn('Auto-responder startListener notice (retrying in 5s):', err);
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(startListener, 5000);
+    } catch (err: any) {
+      console.warn('Auto-responder poll notice:', err?.message || err);
+    } finally {
+      isChecking = false;
     }
   };
 
-  startListener();
+  // Run initial poll, then check periodically
+  checkNewMessages().catch(() => {});
+  const intervalId = setInterval(checkNewMessages, 5000);
+
+  return () => {
+    clearInterval(intervalId);
+  };
 }

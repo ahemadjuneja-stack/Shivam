@@ -2,6 +2,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { 
   initializeFirestore,
+  setLogLevel,
   doc, 
   setDoc, 
   updateDoc, 
@@ -110,6 +111,10 @@ export const FIRESTORE_DATABASE_ID = firebaseConfig.firestoreDatabaseId || "ai-s
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true
 }, FIRESTORE_DATABASE_ID);
+
+try {
+  setLogLevel('silent');
+} catch {}
 
 
 // Initialize Firebase Messaging safely
