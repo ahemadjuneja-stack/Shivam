@@ -501,30 +501,39 @@ export function Home() {
             animate="center"
             exit="exit"
             transition={{
-              x: { type: "spring", stiffness: 300, damping: 30 },
+              x: { type: "spring", stiffness: 500, damping: 35 },
               opacity: { duration: 0.2 }
             }}
             drag={isZoomedIn ? false : "x"}
+            dragDirectionLock
+            dragMomentum={false}
             dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={1}
+            dragElastic={0.3}
             onDragEnd={(_, { offset }: any) => {
-              if (offset.x < -50) {
+              if (offset.x < -25) {
                 handleNextPhoto();
-              } else if (offset.x > 50) {
+              } else if (offset.x > 25) {
                 handlePrevPhoto();
+              }
+            }}
+            onTouchMoveCapture={(e: React.TouchEvent) => {
+              if (!isZoomedIn && e.touches.length === 1) {
+                e.stopPropagation();
               }
             }}
             className="absolute w-full h-full"
           >
             <TransformWrapper
+              key={photo?.id || photo?.imageUri}
               initialScale={1}
               minScale={1}
               maxScale={4}
               centerOnInit={true}
-              wheel={{ step: 0.1 }}
-              doubleClick={{ step: 1 }}
+              limitToBounds={true}
+              wheel={{ disabled: true }}
+              doubleClick={{ disabled: false, mode: 'toggle', step: 2.5, animationTime: 250 }}
               pinch={{ step: 5 }}
-              panning={{ disabled: !isZoomedIn }}
+              panning={{ disabled: !isZoomedIn, velocityDisabled: true }}
               onTransform={(ref: any) => {
                 setIsZoomedIn(ref.state.scale > 1.05);
               }}
