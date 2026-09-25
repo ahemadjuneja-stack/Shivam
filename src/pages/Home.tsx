@@ -13,6 +13,28 @@ import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { HomeVideoSlider } from '../components/HomeVideoSlider';
 import { loadSubCategoriesForCategory, loadPhotosForCategory, loadPhotosForSubCategory } from '../useFirebaseSync';
 
+function readScaleFromDom(root: Element | null): number {
+  try {
+    if (!root || !(root as any).querySelector) return -1;
+    let el: Element | null = root.querySelector('img');
+    while (el && el !== root) {
+      const t = window.getComputedStyle(el).transform;
+      if (t && t !== 'none') {
+        const m = t.match(/matrix(?:3d)?\(([^)]+)\)/);
+        if (m) {
+          const p = m[1].split(',').map(parseFloat);
+          if (p.length >= 6 && isFinite(p[0]) && isFinite(p[1])) {
+            const s = Math.hypot(p[0], p[1]);
+            if (isFinite(s) && s > 0) return s;
+          }
+        }
+      }
+      el = el.parentElement;
+    }
+  } catch (err) { /* ignore */ }
+  return -1;
+}
+
 export function Home() {
   const rawCategories = useAppStore(state => state.categories);
   const rawSubCategories = useAppStore(state => state.subCategories);
@@ -73,6 +95,10 @@ export function Home() {
   const zoomApiRef = useRef<any>(null);
   const lastTapRef = useRef<{ t: number; x: number; y: number }>({ t: 0, x: 0, y: 0 });
   const pinchLockRef = useRef(false);
+  const zoomedRef = useRef(false);
+  const zoomGenRef = useRef(0);
+  const tapStartRef = useRef<{x:number;y:number}|null>(null);
+  const scaleRef = useRef(1);
   const [isZoomedIn, setIsZoomedIn] = useState(false);
   const [slideDirection, setSlideDirection] = useState(0);
   const photo = selectedPhoto || galleryPhotos[0];
@@ -83,6 +109,8 @@ export function Home() {
     }
     setIsZoomedIn(false);
     pinchLockRef.current = false;
+    zoomedRef.current = false;
+    scaleRef.current = 1;
   }, [photo?.id, photo?.imageUri]);
 
   // Feedback notification
@@ -533,6 +561,9 @@ export function Home() {
             onTouchStart={(e: React.TouchEvent) => {
               if (e.touches.length >= 2) {
                 pinchLockRef.current = true;
+              } else if (e.touches.length === 1) {
+                const ft = e.touches[0];
+                tapStartRef.current = { x: ft.clientX, y: ft.clientY };
               }
             }}
             onPointerMoveCapture={(e) => {
@@ -552,15 +583,47 @@ export function Home() {
               const api = zoomApiRef.current;
               const t = e.changedTouches[0];
               if (!t) return;
+              const ts = tapStartRef.current; tapStartRef.current = null;
+              if (ts && Math.hypot(t.clientX - ts.x, t.clientY - ts.y) > 12) { lastTapRef.current = { t: 0, x: 0, y: 0 }; return; }
               const now = Date.now();
               const lt = lastTapRef.current;
               const isDouble = now - lt.t < 350 && Math.hypot(t.clientX - lt.x, t.clientY - lt.y) < 60;
               lastTapRef.current = { t: now, x: t.clientX, y: t.clientY };
-              const scale = api && api.state && typeof api.state.scale === 'number' ? api.state.scale : -1;
               if (!isDouble || !api) return;
               lastTapRef.current = { t: 0, x: 0, y: 0 };
-              if (scale > 1.05) { api.resetTransform(250); }
-              else { api.centerView ? api.centerView(2.5, 250) : api.zoomIn(2.5, 250); }
+              const el = e.currentTarget as Element | null;
+              zoomGenRef.current += 1;
+              const gen = zoomGenRef.current;
+              let scale = (api && api.state && typeof api.state.scale === 'number' && isFinite(api.state.scale)) ? api.state.scale : -1;
+              if (!(scale > 0)) scale = readScaleFromDom(el);
+              if (!(scale > 0) && typeof scaleRef.current === 'number' && isFinite(scaleRef.current)) scale = scaleRef.current;
+              const pre = 'g' + gen + ' s=' + (scale > 0 ? scale.toFixed(2) : '?');
+              const goingIn = !(scale > 1.2);
+              const target = goingIn ? 2.5 : 1;
+              const start = goingIn ? (scale > 0 ? Math.max(scale, 1) : 1) : Math.min(scale, 2.5);
+              const t0 = performance.now();
+              const ANIM = 260;
+              const HOLD = 700;
+              if (goingIn) { zoomedRef.current = true; setIsZoomedIn(true); scaleRef.current = 2.5; } else { zoomedRef.current = false; setIsZoomedIn(false); scaleRef.current = 1; }
+              const step = () => {
+                if (zoomGenRef.current !== gen || pinchLockRef.current) return;
+                const dt = performance.now() - t0;
+                if (dt < ANIM) {
+                  const k = dt / ANIM;
+                  const ez = 1 - Math.pow(1 - k, 3);
+                  const s = start + (target - start) * ez;
+                  if (api.centerView) { api.centerView(s, 0); } else { api.zoomIn(1, 0); }
+                  requestAnimationFrame(step);
+                } else if (dt < HOLD) {
+                  if (goingIn) { if (api.centerView) { api.centerView(2.5, 0); } else { api.zoomIn(2.5, 0); } } else { api.resetTransform(0); }
+                  requestAnimationFrame(step);
+                } else {
+                  if (!goingIn) { api.resetTransform(0); }
+                  const post = (api && api.state && typeof api.state.scale === 'number') ? api.state.scale : readScaleFromDom(el);
+                  const stale = zoomGenRef.current !== gen; void [pre, post, stale];
+                }
+              };
+              requestAnimationFrame(step);
             }}
             className="absolute w-full h-full"
           >
@@ -578,6 +641,8 @@ export function Home() {
               onInit={(ref: any) => { zoomApiRef.current = ref; }}
               onTransform={(ref: any) => {
                 setIsZoomedIn(ref.state.scale > 1.05);
+                zoomedRef.current = ref.state.scale > 1.05;
+                scaleRef.current = ref.state.scale;
               }}
             >
               <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center" }}>
