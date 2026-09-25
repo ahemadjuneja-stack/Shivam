@@ -5,7 +5,7 @@ import { initGeminiAutoResponder } from "./server/autoResponder";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // API routes FIRST
   app.get("/api/health", (req, res) => {
