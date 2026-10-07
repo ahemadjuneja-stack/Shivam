@@ -24,216 +24,116 @@ export interface SubCategory {
   orderIndex?: number;
 }
 
+export interface ProductVariant {
+  id: string;
+  label: string;
+  minQuantity: number;
+  quantity?: number;
+  letter?: string;
+  name?: string;
+  isAvailable?: boolean;
+  inStock?: boolean;
+}
+
 export interface CatalogPhoto {
   id: string;
   categoryId: string;
   subCategoryId: string;
+  subcategoryId?: string;
   subCategoryName: string;
   photoCode: string;
+  code?: string;
+  title?: string;
+  name?: string;
   imageUri: string;
+  imageUrl?: string;
   thumbnailUrl?: string;
+  photoUrl?: string;
   videoUri?: string; // Optional showcase video
-  itemCount: number; // 2, 3, or 4
-  aAvailable: boolean;
-  bAvailable: boolean;
-  cAvailable: boolean;
-  dAvailable: boolean;
+  videoUrl?: string;
+  itemCount: number; // number of variants
+  aAvailable?: boolean;
+  bAvailable?: boolean;
+  cAvailable?: boolean;
+  dAvailable?: boolean;
   defaultQuantity: number;
+  minQty?: number;
   sortOrder: number;
   orderIndex?: number;
   description: string;
-  // Dynamic fields from Firestore
-  variants?: Array<{
-    key: string;
-    label: string;
-    isAvailable: boolean;
-    defaultQuantity?: number;
-  }>;
-  aLabel?: string;
-  bLabel?: string;
-  cLabel?: string;
-  dLabel?: string;
-  aDefaultQuantity?: number;
-  bDefaultQuantity?: number;
-  cDefaultQuantity?: number;
-  dDefaultQuantity?: number;
+  customLabels?: string[]; // e.g. ['Black', '100ml'] or ['A', 'B']
+  variants?: ProductVariant[]; // [{ id: "v1", label: "Black", minQuantity: 12 }, { id: "v2", label: "100ml", minQuantity: 5 }]
+  isHidden?: boolean;
+  isVisible?: boolean;
+  status?: string;
+  updatedAt?: any;
 }
 
-export interface ProductVariant {
-  key: string;        // 'A', 'B', 'C', 'D' or index-based
-  label: string;      // 'Black', 'Maroon', 'A', 'B', etc.
-  isAvailable: boolean;
-  defaultQuantity: number;
+export interface DeviceSession {
+  deviceId: string;
+  deviceName?: string;
+  locationName?: string;
+  latitude?: number;
+  longitude?: number;
+  lastActiveAt: string;
+  isOnline: boolean;
 }
 
-export function getPhotoVariants(photo: CatalogPhoto): ProductVariant[] {
-  const parseQty = (val: any): number | undefined => {
-    if (val === undefined || val === null || val === '') return undefined;
-    const num = Number(val);
-    return !isNaN(num) && num >= 0 ? num : undefined;
-  };
-
-  // 1. If photo.variants is an array of objects
-  if (Array.isArray(photo.variants) && photo.variants.length > 0) {
-    return photo.variants.map((v: any, index: number) => {
-      const keys = ['A', 'B', 'C', 'D'];
-      const defaultKey = keys[index] || `V${index + 1}`;
-
-      // Check variant-specific min/default quantity fields in specified order:
-      // minQuantity, defaultQuantity, minQty, min, minimumQuantity, qty, quantity, packSize
-      let vQty = parseQty(v.minQuantity);
-      if (vQty === undefined) vQty = parseQty(v.defaultQuantity);
-      if (vQty === undefined) vQty = parseQty(v.minQty);
-      if (vQty === undefined) vQty = parseQty(v.min);
-      if (vQty === undefined) vQty = parseQty(v.minimumQuantity);
-      if (vQty === undefined) vQty = parseQty(v.qty);
-      if (vQty === undefined) vQty = parseQty(v.quantity);
-      if (vQty === undefined) vQty = parseQty(v.packSize);
-
-      const finalQty = vQty !== undefined ? vQty : 1;
-
-      let vAvail = true;
-      if (v.isAvailable !== undefined) {
-        vAvail = !!v.isAvailable;
-      } else if (v.available !== undefined) {
-        vAvail = !!v.available;
-      } else if (v.inStock !== undefined) {
-        vAvail = !!v.inStock;
-      }
-
-      if (finalQty === 0) {
-        vAvail = false;
-      }
-
-      return {
-        key: v.key || defaultKey,
-        label: v.label || v.name || defaultKey,
-        isAvailable: vAvail,
-        defaultQuantity: finalQty
-      };
-    });
-  }
-
-  // 2. Generate from standard properties (A, B, C, D)
-  const parsedBaseQty = parseQty(photo.defaultQuantity);
-  const baseDefaultQty = parsedBaseQty !== undefined && parsedBaseQty > 0 ? parsedBaseQty : 1;
-
-  const variantsList: ProductVariant[] = [];
-  const count = typeof photo.itemCount === 'number' && photo.itemCount > 0 ? photo.itemCount : 4;
-  const options = ['A', 'B', 'C', 'D'];
-
-  for (let i = 0; i < count; i++) {
-    const opt = options[i];
-    const isAvailKey = `${opt.toLowerCase()}Available` as keyof CatalogPhoto;
-    const labelKey = `${opt.toLowerCase()}Label` as keyof CatalogPhoto;
-    const qtyKey = `${opt.toLowerCase()}DefaultQuantity` as keyof CatalogPhoto;
-
-    const qtyVal = parseQty(photo[qtyKey]);
-    const defaultQuantity = qtyVal !== undefined ? qtyVal : baseDefaultQty;
-
-    const isAvailable = photo[isAvailKey] !== undefined 
-      ? !!photo[isAvailKey] 
-      : (defaultQuantity > 0);
-
-    const label = (photo[labelKey] as string) || opt;
-
-    variantsList.push({
-      key: opt,
-      label,
-      isAvailable: isAvailable && defaultQuantity > 0,
-      defaultQuantity
-    });
-  }
-
-  return variantsList;
+export interface DeviceInfo {
+  model?: string;
+  osVersion?: string;
+  appVersion?: string;
+  updatedAt?: number | any;
 }
 
-export interface ShowroomVideo {
-  id: string;
-  videoUri: string;
-  imageUri?: string;
-  photoCode?: string;
-  subCategoryName?: string;
-  subCategoryId?: string;
-  categoryId?: string;
-  title?: string;
-  quantity?: number;
-  sortOrder?: number;
+export interface LoginHistoryItem {
+  ts?: number | any;
+  model?: string;
+  osVersion?: string;
+  appVersion?: string;
+  deviceId?: string;
+}
+
+export interface CartAbandonData {
+  count?: number;
+  lastItems?: number;
+  lastAt?: number | any;
 }
 
 export interface Customer {
   id?: string;
-  customerId: string;
-  customerCode: string; // backwards compatibility
+  customerId?: string;
+  customerCode: string;
   shopName: string;
-  ownerName: string;
-  phone: string;
-  city: string;
-  address?: string;
-  createdAt?: number | any;
-  pin?: string;
-  status?: string;
+  cityName: string;
+  mobileNumber: string;
+  contactPerson: string;
+  address: string;
+  status?: 'Verified' | 'Pending' | 'Approved';
   isVerified?: boolean;
-  role?: string;
-  department?: string;
+  isOnline?: boolean;
+  lastActive?: number;
+  gpsLocation?: string;
+  resolvedAddress?: string;
+  pin?: string;
+  allowedCategories?: string[];
+  allowedSubCategories?: string[];
   allowedCategoryIds?: string[];
   allowedSubCategoryIds?: string[];
-  isOnline?: boolean;
-  lastActive?: any;
-  location?: {
-    city?: string;
-    taluka?: string;
-    latitude: number;
-    longitude: number;
-    timestamp: number;
-  } | null;
-  // Legacy aliases
-  contactPerson?: string;
-  mobileNumber?: string;
-  cityName?: string;
-}
-
-export interface ChatMessage {
-  id?: string;
-  messageId?: string;
-  customerId: string;
-  customerCode?: string;
-  shopName: string;
-  sender: 'customer' | 'admin';
-  type: 'text' | 'image' | 'voice';
-  text?: string;
-  mediaUrl?: string; // image or audio data / URL
-  imageUri?: string; // backwards compatibility
-  imageUrl?: string; // backwards compatibility
-  audioUri?: string; // backwards compatibility
-  audioUrl?: string; // backwards compatibility
-  isRead: boolean;
-  isReadByCustomer?: boolean;
-  timestamp: any;
+  totalOrders?: number;
+  role?: string;
+  staffCategory?: string;
+  hasAllowedLocation?: boolean;
+  maxAllowedDevices?: number;
+  activeSessions?: DeviceSession[];
+  visitingCardUrl?: string;
+  activeDeviceId?: string | null;
+  deviceBoundAt?: number | null;
   createdAt?: number;
-}
-
-export interface BroadcastMessage {
-  id: string;
-  title?: string;
-  message: string;
-  imageUrl?: string;
-  sender?: string;
-  isReadByCustomer?: boolean;
-  timestamp: any;
-}
-
-export interface CommunityPost {
-  postId: string;
-  id: string;
-  customerId: string;
-  customerCode?: string;
-  shopName: string;
-  imageUrl: string;
-  caption: string;
-  timestamp: any;
-  likesCount: number;
-  likedBy?: string[];
+  deviceInfo?: DeviceInfo;
+  loginHistory?: LoginHistoryItem[];
+  sectionViews?: Record<string, number>;
+  cartAbandon?: CartAbandonData;
 }
 
 export interface OrderCartItem {
@@ -241,58 +141,135 @@ export interface OrderCartItem {
   photoCode: string;
   imageUri: string;
   imageUrl?: string;
+  image?: string;
   categoryId: string;
   subCategoryName: string;
   optionLetter: string;
+  customLabel?: string; // custom variant name e.g. '1KG'
   quantity: number;
-  defaultQuantity?: number;
-  // Dashboard item format fields
+
+  // New fields requested for order schema preparedness
   id?: string;
   name?: string;
+  category?: string;
   variant?: string;
   price?: number;
 }
 
-export interface StandardOrderItem {
-  id: string;
-  photoCode: string;
-  name: string;
-  quantity: number;
-  variant: string;
-  price: number;
-  // Optional extra metadata
-  photoId?: string;
-  imageUri?: string;
-  imageUrl?: string;
-  categoryId?: string;
-  subCategoryName?: string;
+export interface DepartmentStatusItem {
+  status: 'Pending' | 'Done';
+  packedBy: string;
+  packedAt: number;
 }
 
 export interface WholesaleOrder {
-  orderId: string;
   id: string;
-  customerId: string;
+  orderNumber: string;
   customerCode: string;
   shopName: string;
-  cityName?: string;
-  mobileNumber?: string;
-  items: (OrderCartItem | StandardOrderItem)[];
-  itemCount?: number;
+  cityName: string;
+  mobileNumber: string;
+  items: OrderCartItem[];
   totalItemsCount: number;
-  totalAmount: number;
-  orderNote: string;
-  voiceNoteUrl?: string | null;
-  voiceUrl?: string | null;
-  audioUrl?: string | null;
-  voiceNoteStatus?: 'none' | 'pending' | 'done';
-  status: 'Pending' | 'Processing' | 'Dispatched' | string;
-  imitationStatus?: string; // PENDING, DONE, NOT_APPLICABLE
-  cosmeticsStatus?: string;
-  hairStatus?: string;
-  overallStatus?: string; // RECEIVED, PARTIALLY_PACKED, READY_TO_SHIP, DISPATCHED
-  departmentStatus?: Record<string, { status: string; updatedBy?: string; updatedAt?: number }>;
-  notes?: string;
-  voiceNoteUri?: string | null;
-  orderNumber?: string;
-  createdAt: any;
+  itemCount?: number;
+  totalQuantity?: number;
+  imitationStatus: string; // PENDING, DONE, NOT_APPLICABLE
+  cosmeticsStatus: string;
+  hairStatus: string;
+  overallStatus: string; // PENDING, PROCESSING, PACKED, DISPATCHED, DONE, RECEIVED, PARTIALLY_PACKED, READY_TO_SHIP
+  notes: string;
+  orderNote?: string; // Alternative field from mobile app
+  voiceNoteUrl?: string; // Voice recording URL from mobile application
+  voiceNote?: string; // Alternative voice note field from mobile app
+  createdAt: number;
+  source?: 'SALESMAN' | 'CUSTOMER';
+  salesmanName?: string; // e.g. 'RAMIZ', 'RIYAZ', 'ZARIF'
+  displayTitle?: string;
+  dateFormatted?: string; // e.g. '16-09-2026'
+  departmentStatus?: {
+    [categoryName: string]: DepartmentStatusItem;
+  };
+  notificationHistory?: OrderNotificationHistoryItem[];
+}
+
+export interface OrderNotificationHistoryItem {
+  id: string;
+  type: 'CONFIRMATION' | 'DEPT_PACKED' | 'DISPATCHED';
+  message: string;
+  timestamp: number;
+  details?: {
+    transportName?: string;
+    biltyNumber?: string;
+    parcelsCount?: number;
+    biltyPhotoUrl?: string;
+  };
+}
+
+export interface CommunityPost {
+  id: string;
+  customerCode?: string;
+  shopName: string;
+  authorName?: string;
+  cityName?: string;
+  text?: string;
+  caption?: string;
+  imageUrl?: string;
+  imageUri?: string;
+  voiceNoteUrl?: string;
+  timestamp: number;
+  type?: 'CUSTOMER_POST' | 'ADMIN_ANNOUNCEMENT' | 'PHOTO' | 'TEXT';
+  isAnnouncement?: boolean;
+  likesCount?: number;
+}
+
+export interface ShowroomVideo {
+  id: string;
+  title: string;
+  videoUri: string;
+  videoUrl?: string;
+  thumbnailUri?: string;
+  categoryId?: string;
+  categoryName?: string;
+  fileSizeMb?: number;
+  orderQuantity?: string;
+  uploadedAt: number;
+  imageUri?: string;
+  posterUrl?: string;
+  quantity?: number;
+  sortOrder?: number;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export interface ChatMessage {
+  id: string;
+  customerCode: string;
+  customerId?: string;
+  sender: 'CUSTOMER' | 'ADMIN' | 'customer' | 'admin';
+  type: 'TEXT' | 'IMAGE' | 'VOICE' | 'text' | 'image' | 'voice';
+  content: string; // text content, or URL for image/voice
+  text?: string;
+  mediaUrl?: string;
+  imageUrl?: string;
+  imageUri?: string;
+  image?: string;
+  voiceNoteUrl?: string;
+  audioUrl?: string;
+  audioUri?: string;
+  timestamp: number;
+  isRead: boolean;
+  isBroadcast?: boolean;
+}
+
+export interface BroadcastMessage {
+  id: string;
+  title?: string;
+  text: string;
+  type: 'TEXT' | 'IMAGE' | 'VOICE';
+  mediaUrl?: string;
+  imageUrl?: string;
+  voiceNoteUrl?: string;
+  timestamp: number;
+  sender: 'admin' | 'ADMIN';
+  targetAudience?: 'ALL_CUSTOMERS';
 }

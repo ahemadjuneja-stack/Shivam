@@ -1,32 +1,36 @@
 {
   "entities": {
-    "CatalogPhoto": {
-      "title": "CatalogPhoto",
-      "description": "Showcase 16:9 catalog photo with multiple orderable options (A, B, C, D)",
+    "CategoryItem": {
+      "title": "CategoryItem",
+      "description": "Wholesale catalog category with accent color and thumbnail",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "displayName": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "accentColorHex": { "type": "string" },
+        "sortOrder": { "type": "number" }
+      },
+      "required": ["id", "displayName"]
+    },
+    "SubCategory": {
+      "title": "SubCategory",
+      "description": "Catalog subcategory under a main category",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "categoryId": { "type": "string" },
-        "subCategoryId": { "type": "string" },
-        "subCategoryName": { "type": "string" },
-        "photoCode": { "type": "string" },
-        "imageUri": { "type": "string" },
-        "videoUri": { "type": "string" },
-        "itemCount": { "type": "number" },
-        "aAvailable": { "type": "boolean" },
-        "bAvailable": { "type": "boolean" },
-        "cAvailable": { "type": "boolean" },
-        "dAvailable": { "type": "boolean" },
-        "defaultQuantity": { "type": "number" },
-        "sortOrder": { "type": "number" },
-        "description": { "type": "string" },
-        "updatedAt": { "type": "number" }
+        "name": { "type": "string" },
+        "iconName": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "photoCount": { "type": "number" },
+        "sortOrder": { "type": "number" }
       },
-      "required": ["id", "categoryId", "subCategoryId", "photoCode", "imageUri"]
+      "required": ["id", "categoryId", "name"]
     },
     "WholesaleOrder": {
       "title": "WholesaleOrder",
-      "description": "B2B wholesale order placed by a customer",
+      "description": "Order submitted by mobile application or created by admin",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -35,83 +39,75 @@
         "shopName": { "type": "string" },
         "cityName": { "type": "string" },
         "mobileNumber": { "type": "string" },
-        "totalItemsCount": { "type": "number" },
+        "items": { "type": "array" },
         "imitationStatus": { "type": "string" },
         "cosmeticsStatus": { "type": "string" },
         "hairStatus": { "type": "string" },
         "overallStatus": { "type": "string" },
         "notes": { "type": "string" },
-        "voiceNoteUri": { "type": "string" },
+        "voiceNoteUrl": { "type": "string" },
         "createdAt": { "type": "number" },
-        "updatedAt": { "type": "number" }
+        "source": { "type": "string" },
+        "salesmanName": { "type": "string" },
+        "displayTitle": { "type": "string" },
+        "dateFormatted": { "type": "string" }
       },
-      "required": ["id", "orderNumber", "customerCode", "shopName"]
+      "required": ["id", "orderNumber"]
     },
     "Customer": {
       "title": "Customer",
-      "description": "Registered wholesale B2B client with tracking and access control",
+      "description": "Wholesale customer profile",
       "type": "object",
       "properties": {
-        "customerId": { "type": "string" },
         "customerCode": { "type": "string" },
         "shopName": { "type": "string" },
         "cityName": { "type": "string" },
         "mobileNumber": { "type": "string" },
-        "contactPerson": { "type": "string" },
-        "address": { "type": "string" },
-        "pin": { "type": "string" },
-        "status": { "type": "string" },
-        "role": { "type": "string" },
-        "allowedCategoryIds": { "type": "array" },
-        "allowedSubCategoryIds": { "type": "array" },
-        "isOnline": { "type": "boolean" },
-        "lastActive": { "type": "object" },
-        "location": { "type": "object" },
-        "updatedAt": { "type": "number" }
+        "address": { "type": "string" }
       },
-      "required": ["customerId", "customerCode", "shopName"]
+      "required": ["customerCode", "shopName"]
     },
-    "ChatMessage": {
-      "title": "ChatMessage",
-      "description": "Direct communication between customer and showroom admin",
+    "Product": {
+      "title": "Product",
+      "description": "Catalog product item synced with customer app",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "customerCode": { "type": "string" },
-        "sender": { "type": "string" },
-        "text": { "type": "string" },
-        "imageUri": { "type": "string" },
-        "audioUri": { "type": "string" },
-        "timestamp": { "type": "number" },
-        "updatedAt": { "type": "number" }
+        "code": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "subcategoryId": { "type": "string" },
+        "variants": { "type": "array" },
+        "minQty": { "type": "number" },
+        "imageUrl": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "isVisible": { "type": "boolean" },
+        "status": { "type": "string" },
+        "orderIndex": { "type": "number" }
       },
-      "required": ["id", "customerCode", "sender", "timestamp"]
+      "required": ["code", "categoryId", "subcategoryId"]
     }
   },
   "firestore": {
-    "/catalog_photos/{photoId}": {
-      "schema": { "$ref": "#/entities/CatalogPhoto" },
-      "description": "Collection of catalog photos"
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Unified catalog products collection"
+    },
+    "/categories/{categoryId}": {
+      "schema": "CategoryItem",
+      "description": "Wholesale main categories"
+    },
+    "/subCategories/{subCategoryId}": {
+      "schema": "SubCategory",
+      "description": "Wholesale subcategories"
     },
     "/orders/{orderId}": {
-      "schema": { "$ref": "#/entities/WholesaleOrder" },
-      "description": "Collection of wholesale orders"
+      "schema": "WholesaleOrder",
+      "description": "Wholesale orders from mobile app and admin"
     },
-    "/customers/{customerCode}": {
-      "schema": { "$ref": "#/entities/Customer" },
-      "description": "Collection of customer accounts"
-    },
-    "/chat_messages/{messageId}": {
-      "schema": { "$ref": "#/entities/ChatMessage" },
-      "description": "Collection of customer chat messages"
-    },
-    "/conversations/{customerId}/messages/{messageId}": {
-      "schema": { "$ref": "#/entities/ChatMessage" },
-      "description": "Customer specific conversation thread"
-    },
-    "/broadcast_messages/{broadcastId}": {
-      "schema": { "$ref": "#/entities/ChatMessage" },
-      "description": "Showroom wholesale broadcasts and announcements"
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Registered wholesale customers"
     }
   }
 }

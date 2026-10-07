@@ -1,46 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow read/write for all Showroom B2B and Admin collections
-    match /photos/{docId} {
-      allow read, write: if true;
-    }
-    match /catalog_photos/{docId} {
-      allow read, write: if true;
-    }
-    match /categories/{docId} {
-      allow read, write: if true;
-    }
-    match /subCategories/{docId} {
-      allow read, write: if true;
-    }
-    match /subcategories/{docId} {
-      allow read, write: if true;
-    }
-    match /showroomVideos/{docId} {
-      allow read, write: if true;
-    }
-    match /customers/{docId} {
-      allow read, write: if true;
-    }
-    match /orders/{docId} {
-      allow read, write: if true;
-    }
-    match /community_posts/{docId} {
-      allow read, write: if true;
-    }
-    match /chat_messages/{docId} {
-      allow read, write: if true;
-    }
-    match /messages/{docId} {
-      allow read, write: if true;
-    }
-    match /conversations/{customerId}/messages/{msgId} {
-      allow read, write: if true;
-    }
-    match /broadcast_messages/{docId} {
-      allow read, write: if true;
-    }
     match /{document=**} {
       allow read, write: if true;
     }

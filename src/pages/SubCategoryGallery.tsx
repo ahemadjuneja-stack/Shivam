@@ -1,38 +1,40 @@
-import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAppStore } from '../store';
-import { Minus, Plus } from 'lucide-react';
-import { getPhotoVariants } from '../types';
-import { loadPhotosForSubCategory } from '../useFirebaseSync';
+import { ShoppingCart, Minus, Plus } from 'lucide-react';
+import { useState } from 'react';
 
 export function SubCategoryGallery() {
   const { id } = useParams<{ id: string }>();
-
-  useEffect(() => {
-    if (id) {
-      void loadPhotosForSubCategory(id);
-    }
-  }, [id]);
-  const currentCustomer = useAppStore(state => state.currentCustomer);
   const subCategory = useAppStore(state => state.subCategories.find(s => s.id === id));
   const category = useAppStore(state => state.categories.find(c => c.id === subCategory?.categoryId));
+  const photos = useAppStore(state => state.photos.filter(p => p.subCategoryId === id && !p.isHidden));
+  const addToCart = useAppStore(state => state.addToCart);
+  
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
 
-  const isAllowed = !currentCustomer || (
-    (!currentCustomer.allowedCategoryIds || currentCustomer.allowedCategoryIds.includes('all') || currentCustomer.allowedCategoryIds.includes(subCategory?.categoryId || '')) &&
-    (!currentCustomer.allowedSubCategoryIds || currentCustomer.allowedSubCategoryIds.includes('all') || currentCustomer.allowedSubCategoryIds.includes(id || ''))
-  );
+  if (!subCategory || !category) return <div className="text-center py-20">Folder not found</div>;
 
-  const photos = useAppStore(state => state.photos.filter(p => p.subCategoryId === id));
-  const cart = useAppStore(state => state.cart);
-  const setItemQuantity = useAppStore(state => state.setItemQuantity);
+  const handleAdd = (photo: typeof photos[0], option: string) => {
+    const qtyKey = `${photo.id}-${option}`;
+    const qty = quantities[qtyKey] || photo.defaultQuantity;
+    
+    addToCart({
+      photoId: photo.id,
+      photoCode: photo.photoCode,
+      imageUri: photo.imageUri,
+      categoryId: category.id,
+      subCategoryName: subCategory.name,
+      optionLetter: option,
+      quantity: qty
+    });
+    alert(`Added Option ${option} of ${photo.photoCode} to Cart!`);
+  };
 
-  if (!subCategory || !category || !isAllowed) return <div className="text-center py-20 text-slate-400 font-bold">Folder not found or access restricted</div>;
-
-  const letterBadgeColors: Record<string, { bg: string; text: string }> = {
-    A: { bg: 'bg-amber-400', text: 'text-black' },
-    B: { bg: 'bg-sky-400', text: 'text-black' },
-    C: { bg: 'bg-emerald-400', text: 'text-black' },
-    D: { bg: 'bg-fuchsia-400', text: 'text-white' }
+  const updateQty = (photoId: string, option: string, val: number) => {
+    setQuantities(prev => ({
+      ...prev,
+      [`${photoId}-${option}`]: Math.max(1, val)
+    }));
   };
 
   return (
@@ -48,17 +50,7 @@ export function SubCategoryGallery() {
         {photos.map(photo => (
           <div key={photo.id} className="bg-brand-navy-card rounded-xl border border-slate-700 overflow-hidden shadow-lg">
             <div className="aspect-video bg-slate-900 relative">
-              <img 
-                src={(() => {
-                  const url = photo.thumbnailUrl || photo.imageUri;
-                  return url?.includes('images.unsplash.com') ? url.replace('w=1280', 'w=640') : url;
-                })()} 
-                alt={photo.photoCode} 
-                loading="lazy" 
-                decoding="async" 
-                draggable={false}
-                className="w-full h-full object-cover"
-              />
+              <img src={photo.imageUri} alt={photo.photoCode} className="w-full h-full object-cover" />
               <div className="absolute top-2 left-2 bg-black/80 text-white font-mono text-xs px-2 py-1 rounded border border-slate-600">
                 {photo.photoCode}
               </div>
@@ -68,100 +60,41 @@ export function SubCategoryGallery() {
               <p className="text-sm text-slate-300 mb-4">{photo.description}</p>
               
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {getPhotoVariants(photo).map((variant) => {
-                  const isAvailable = variant.isAvailable;
-                  const minQty = variant.defaultQuantity;
+                {['A', 'B', 'C', 'D'].slice(0, photo.itemCount).map((opt) => {
+                  const isAvail = photo[`${opt.toLowerCase()}Available` as keyof typeof photo];
+                  if (!isAvail) return null;
                   
-                  if (!isAvailable || minQty === 0) {
-                    return (
-                      <div key={variant.key} className="bg-slate-800 rounded-lg p-2 border border-slate-700 flex flex-col gap-2 justify-between pointer-events-none">
-                        {/* Top Label Box (Variant Name): reddish tint with bold RED text */}
-                        <div className="text-center font-black rounded py-1 bg-red-950/30 border border-red-900/30 text-red-500 text-xs sm:text-sm whitespace-nowrap px-2">
-                          {variant.label}
-                        </div>
-
-                        {/* Control Area replacement: Animated Out of Stock pill */}
-                        <div className="flex items-center justify-center bg-slate-950 rounded-lg p-2 border border-red-900/30 animate-slow-blink text-center">
-                          <span className="text-xs font-black text-red-500 whitespace-nowrap">
-                            Out of Stock
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  }
-                  
-                  const currentQty = cart.find(i => 
-                    (i.photoId === photo.id && (i.optionLetter || 'A') === variant.key) || 
-                    i.id === `${photo.id}_${variant.key}`
-                  )?.quantity || 0;
-                  const badge = letterBadgeColors[variant.key] || { bg: 'bg-indigo-600', text: 'text-white' };
+                  const qtyKey = `${photo.id}-${opt}`;
+                  const qty = quantities[qtyKey] || photo.defaultQuantity;
 
                   return (
-                    <div key={variant.key} className="bg-slate-800 rounded-lg p-2 border border-slate-700 flex flex-col gap-2 justify-between">
-                      {/* Interactive Variant Label Button (Touch CLEARS quantity if > 0, NEVER increments) */}
-                      <button
-                        onClick={() => {
-                          if (currentQty > 0) {
-                            setItemQuantity(photo, variant.key, 0);
-                          }
-                        }}
-                        disabled={currentQty === 0}
-                        className={`text-center font-bold rounded py-1 border border-slate-700 select-none transition text-xs sm:text-sm whitespace-nowrap min-w-fit px-2 ${
-                          currentQty > 0 
-                            ? `${badge.bg} ${badge.text} cursor-pointer font-black` 
-                            : 'bg-[#1e293b] text-white border border-[#334155] cursor-default'
-                        }`}
-                        title={currentQty > 0 ? `Tap to Clear (${variant.label})` : `${variant.label} (Pack: ${minQty})`}
-                      >
-                        {variant.label}
-                      </button>
-
-                      {/* Stepper (Strict wholesale quantities: toggles between 0 and multiples of minQty) */}
+                    <div key={opt} className="bg-slate-800 rounded-lg p-2 border border-slate-700 flex flex-col gap-2">
+                      <div className="text-center font-black text-brand-gold bg-slate-900 rounded py-1 border border-slate-700">
+                        {opt}
+                      </div>
                       <div className="flex items-center justify-between bg-slate-950 rounded-lg p-0.5 border border-slate-700">
                         <button 
-                          onClick={() => {
-                            const target = currentQty <= minQty ? 0 : currentQty - minQty;
-                            setItemQuantity(photo, variant.key, target);
-                          }}
-                          disabled={currentQty <= 0}
-                          className={`w-8 h-8 flex items-center justify-center rounded font-bold transition ${
-                            currentQty > 0 
-                              ? 'bg-slate-800 hover:bg-slate-700 text-slate-200' 
-                              : 'bg-slate-900 text-slate-600 opacity-40 cursor-not-allowed'
-                          }`}
+                          onClick={() => updateQty(photo.id, opt, qty - 1)} 
+                          className="w-8 h-8 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-200 active:scale-90 font-bold transition"
                           title="Minus"
                         >
-                          <Minus size={13} strokeWidth={3} />
+                          <Minus size={14} strokeWidth={2.5} />
                         </button>
-                        
-                        <div className="flex flex-col items-center">
-                          <span className="text-sm font-mono font-black text-brand-gold">{currentQty}</span>
-                          <span className="text-[8px] text-slate-400 -mt-1 font-bold">pcs</span>
-                        </div>
-
+                        <span className="text-sm font-mono font-black text-brand-gold w-8 text-center">{qty}</span>
                         <button 
-                          onClick={() => {
-                            const target = currentQty === 0 ? minQty : currentQty + minQty;
-                            setItemQuantity(photo, variant.key, target);
-                          }}
-                          className="w-8 h-8 flex items-center justify-center rounded bg-amber-500 hover:bg-amber-400 text-black font-black transition"
-                          title={`Add ${minQty} pcs`}
+                          onClick={() => updateQty(photo.id, opt, qty + 1)} 
+                          className="w-8 h-8 flex items-center justify-center rounded bg-amber-500 hover:bg-amber-400 text-black active:scale-90 font-black transition"
+                          title="Plus"
                         >
-                          <Plus size={13} strokeWidth={3} />
+                          <Plus size={14} strokeWidth={2.5} />
                         </button>
                       </div>
-
-                      {/* Explicit marked button to add initial pack */}
-                      {currentQty === 0 && (
-                        <button 
-                          onClick={() => {
-                            setItemQuantity(photo, variant.key, minQty);
-                          }}
-                          className="w-full bg-brand-gold hover:bg-brand-gold-light text-black font-black text-xs py-2 rounded-lg flex items-center justify-center gap-1 transition shadow"
-                        >
-                          Add Pack
-                        </button>
-                      )}
+                      <button 
+                        onClick={() => handleAdd(photo, opt)}
+                        className="w-full bg-brand-gold hover:bg-brand-gold-light active:scale-95 text-black font-black text-xs py-2 rounded-lg flex items-center justify-center gap-1.5 transition shadow"
+                      >
+                        <ShoppingCart size={14} /> Add
+                      </button>
                     </div>
                   );
                 })}

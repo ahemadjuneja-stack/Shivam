@@ -1,71 +1,23 @@
+import { useVideoSrc } from '../hooks/useVideoSrc';
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store';
 import { 
+  ChevronLeft, 
+  ChevronRight, 
   Plus, 
   Minus, 
+  Volume2, 
+  VolumeX, 
   ArrowLeft, 
   Check,
   ShoppingBag
 } from 'lucide-react';
-import { CatalogPhoto, ShowroomVideo, getPhotoVariants } from '../types';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { HomeVideoSlider } from '../components/HomeVideoSlider';
-import { loadSubCategoriesForCategory, loadPhotosForCategory, loadPhotosForSubCategory } from '../useFirebaseSync';
-
-function readScaleFromDom(root: Element | null): number {
-  try {
-    if (!root || !(root as any).querySelector) return -1;
-    let el: Element | null = root.querySelector('img');
-    while (el && el !== root) {
-      const t = window.getComputedStyle(el).transform;
-      if (t && t !== 'none') {
-        const m = t.match(/matrix(?:3d)?\(([^)]+)\)/);
-        if (m) {
-          const p = m[1].split(',').map(parseFloat);
-          if (p.length >= 6 && isFinite(p[0]) && isFinite(p[1])) {
-            const s = Math.hypot(p[0], p[1]);
-            if (isFinite(s) && s > 0) return s;
-          }
-        }
-      }
-      el = el.parentElement;
-    }
-  } catch (err) { /* ignore */ }
-  return -1;
-}
+import { CatalogPhoto } from '../types';
 
 export function Home() {
-  const rawCategories = useAppStore(state => state.categories);
-  const rawSubCategories = useAppStore(state => state.subCategories);
-  const currentCustomer = useAppStore(state => state.currentCustomer);
-
-  const syncError = useAppStore(state => state.syncError);
-  const isSubCategoriesLoading = useAppStore(state => state.isSubCategoriesLoading);
-  const isPhotosLoading = useAppStore(state => state.isPhotosLoading);
-  const hasMorePhotos = useAppStore(state => state.hasMorePhotos);
-  const loadMorePhotosFn = useAppStore(state => state.loadMorePhotosFn);
-
-  const categories = rawCategories.filter(c => {
-    if (!currentCustomer) return true;
-    const allowed = currentCustomer.allowedCategoryIds;
-    if (!allowed || allowed.includes('all')) return true;
-    return allowed.includes(c.id);
-  });
-
-  const subCategories = rawSubCategories.filter(s => {
-    if (!currentCustomer) return true;
-    const allowedCat = currentCustomer.allowedCategoryIds;
-    if (allowedCat && !allowedCat.includes('all') && !allowedCat.includes(s.categoryId)) {
-      return false;
-    }
-    const allowedSub = currentCustomer.allowedSubCategoryIds;
-    if (!allowedSub || allowedSub.includes('all')) return true;
-    return allowedSub.includes(s.id);
-  });
-
+  const categories = useAppStore(state => state.categories);
+  const subCategories = useAppStore(state => state.subCategories);
   const photos = useAppStore(state => state.photos);
-  const showroomVideos = useAppStore(state => state.showroomVideos);
   const cart = useAppStore(state => state.cart);
   const setItemQuantity = useAppStore(state => state.setItemQuantity);
   const setIsCartOpen = useAppStore(state => state.setIsCartOpen);
@@ -80,54 +32,98 @@ export function Home() {
   const [screenMode, setScreenMode] = useState<'home' | 'subcategories' | 'gallery' | 'fullimage'>('home');
   const [selectedPhoto, setSelectedPhoto] = useState<CatalogPhoto | null>(null);
 
-  // Filtered lists
-  const currentCategory = categories.find(c => c.id === activeCategoryId) || categories[0];
-  const categorySubList = subCategories.filter(s => s.categoryId === activeCategoryId);
-  const galleryPhotos = photos.filter(p => p.subCategoryId === activeSubCategoryId);
+  // Dynamic filter for User App (APK):
+  // 1. Subcategory is active ONLY if it contains at least 1 active product
+  const isSubCategoryActive = (subId: string) => {
+    return photos.some(p => p.subCategoryId === subId && !p.isHidden);
+  };
+
+  // 2. Category is active ONLY if it contains subcategories with active products (or direct products)
+  const isCategoryActive = (catId: string) => {
+    const catSubs = subCategories.filter(s => s.categoryId === catId);
+    return catSubs.some(s => isSubCategoryActive(s.id)) || photos.some(p => p.categoryId === catId && !p.isHidden);
+  };
+
+  const activeCategories = categories.filter(c => isCategoryActive(c.id));
+  const activeSubCategories = subCategories.filter(s => isSubCategoryActive(s.id));
+
+  // Filtered lists for current active selection
+  const currentCategory = activeCategories.find(c => c.id === activeCategoryId) || activeCategories[0] || categories[0];
+  const categorySubList = activeSubCategories.filter(s => s.categoryId === (currentCategory?.id || activeCategoryId));
+  const galleryPhotos = photos.filter(p => p.subCategoryId === activeSubCategoryId && !p.isHidden);
   const activePhotoIndex = selectedPhoto ? galleryPhotos.findIndex(p => p.id === selectedPhoto.id) : 0;
+  const totalCartPieces = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Video slide reel (combine showroomVideos collection and photos with videoUri)
-  const videoList: (CatalogPhoto | ShowroomVideo)[] = [
-    ...(showroomVideos || []),
-    ...photos.filter(p => !!p.videoUri && !showroomVideos.some(v => v.id === p.id || v.videoUri === p.videoUri))
-  ];
+  // Video slide reel (all photos with videos in 16:9 HDTV)
+  const videoList = useAppStore(state => state.showroomVideos);
+  const [videoSlideIdx, setVideoSlideIdx] = useState(0);
+  const [isVideoMuted, setIsVideoMuted] = useState(true);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  const zoomApiRef = useRef<any>(null);
-  const lastTapRef = useRef<{ t: number; x: number; y: number }>({ t: 0, x: 0, y: 0 });
-  const pinchLockRef = useRef(false);
-  const zoomedRef = useRef(false);
-  const zoomGenRef = useRef(0);
-  const tapStartRef = useRef<{x:number;y:number}|null>(null);
-  const scaleRef = useRef(1);
-  const [isZoomedIn, setIsZoomedIn] = useState(false);
-  const [slideDirection, setSlideDirection] = useState(0);
-  const photo = selectedPhoto || galleryPhotos[0];
+  // Touch & Swipe gesture handling for full image
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
+  const isMouseDown = useRef(false);
+  const mouseStartX = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (zoomApiRef.current) {
-      try { zoomApiRef.current.resetTransform(0); } catch {}
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchEndX.current = null;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartX.current !== null && touchEndX.current !== null) {
+      const diffX = touchStartX.current - touchEndX.current;
+      if (diffX > 35) {
+        handleNextPhoto(); // swiped left -> next photo
+      } else if (diffX < -35) {
+        handlePrevPhoto(); // swiped right -> prev photo
+      }
     }
-    setIsZoomedIn(false);
-    pinchLockRef.current = false;
-    zoomedRef.current = false;
-    scaleRef.current = 1;
-  }, [photo?.id, photo?.imageUri]);
+    touchStartX.current = null;
+    touchEndX.current = null;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isMouseDown.current = true;
+    mouseStartX.current = e.clientX;
+  };
+
+  const handleMouseMove = () => {
+    // keeping drag state active
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (isMouseDown.current && mouseStartX.current !== null) {
+      const diffX = mouseStartX.current - e.clientX;
+      if (diffX > 40) {
+        handleNextPhoto();
+      } else if (diffX < -40) {
+        handlePrevPhoto();
+      }
+    }
+    isMouseDown.current = false;
+    mouseStartX.current = null;
+  };
 
   // Feedback notification
   const [qtyFeedback, setQtyFeedback] = useState<string | null>(null);
 
+  // Auto-slide video on the left side every 6.5s
   useEffect(() => {
-    if (activeCategoryId) {
-      void loadSubCategoriesForCategory(activeCategoryId);
-      void loadPhotosForCategory(activeCategoryId);
-    }
-  }, [activeCategoryId]);
+    if (videoList.length <= 1) return;
+    const interval = setInterval(() => {
+      setVideoSlideIdx(prev => (prev + 1) % videoList.length);
+    }, 6500);
+    return () => clearInterval(interval);
+  }, [videoList.length]);
 
-  useEffect(() => {
-    if (activeSubCategoryId) {
-      void loadPhotosForSubCategory(activeSubCategoryId);
-    }
-  }, [activeSubCategoryId]);
+  const activeVideoPhoto = videoList[videoSlideIdx] || videoList[0];
+  const activeVideoSrc = useVideoSrc(activeVideoPhoto?.videoUri);
 
   // 1. Select category from Home -> opens subcategory view
   const handleSelectCategory = (catId: string) => {
@@ -144,56 +140,28 @@ export function Home() {
   };
 
   // 3. Select product photo -> opens full image view
-  const handleOpenFullImage = (item: CatalogPhoto | ShowroomVideo) => {
-    const matchedPhoto = photos.find(p => p.id === item.id || p.photoCode === item.photoCode);
-    if (matchedPhoto) {
-      setSelectedPhoto(matchedPhoto);
-      if (matchedPhoto.subCategoryId) {
-        setActiveSubCategory(matchedPhoto.subCategoryId);
-      }
-    } else {
-      const fallbackPhoto: CatalogPhoto = {
-        id: item.id,
-        categoryId: (item as any).categoryId || activeCategoryId || categories[0]?.id || '',
-        subCategoryId: (item as any).subCategoryId || activeSubCategoryId || '',
-        subCategoryName: item.subCategoryName || '',
-        photoCode: item.photoCode || 'SHOWCASE',
-        imageUri: item.imageUri || (item as any).videoUri || '',
-        videoUri: (item as any).videoUri || undefined,
-        itemCount: (item as any).itemCount || 4,
-        aAvailable: true,
-        bAvailable: true,
-        cAvailable: true,
-        dAvailable: true,
-        defaultQuantity: 1,
-        sortOrder: item.sortOrder || 0,
-        description: (item as any).description || ''
-      };
-      setSelectedPhoto(fallbackPhoto);
-    }
+  const handleOpenFullImage = (photo: CatalogPhoto) => {
+    setSelectedPhoto(photo);
     setScreenMode('fullimage');
     setShowroomScreenMode('fullimage');
   };
 
   // Next & Prev slide in Full Image mode
   const handleNextPhoto = () => {
-    setSlideDirection(1);
     if (galleryPhotos.length === 0) return;
-    const nextIdx = Math.min(galleryPhotos.length - 1, activePhotoIndex + 1);
+    const nextIdx = (activePhotoIndex + 1) % galleryPhotos.length;
     setSelectedPhoto(galleryPhotos[nextIdx]);
   };
 
   const handlePrevPhoto = () => {
-    setSlideDirection(-1);
     if (galleryPhotos.length === 0) return;
-    const prevIdx = Math.max(0, activePhotoIndex - 1);
+    const prevIdx = (activePhotoIndex - 1 + galleryPhotos.length) % galleryPhotos.length;
     setSelectedPhoto(galleryPhotos[prevIdx]);
   };
 
   // Keyboard navigation for full image
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((document.activeElement as HTMLElement)?.tagName)) return;
       if (screenMode === 'fullimage') {
         if (e.key === 'ArrowRight') handleNextPhoto();
         if (e.key === 'ArrowLeft') handlePrevPhoto();
@@ -215,15 +183,12 @@ export function Home() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [screenMode, activePhotoIndex, galleryPhotos]);
+  });
 
   // Get current quantity for a photo's option letter from cart
-  const getOptionQty = (photoId: string, optionLetter: string) => {
-    const item = cart.find(c => 
-      (c.photoId === photoId && (c.optionLetter || 'A') === optionLetter) ||
-      (c.id === `${photoId}_${optionLetter}`)
-    );
-    return item ? item.quantity : 0;
+  const getOptionQty = (photoId: string, optionLetter: string, defaultQty: number) => {
+    const item = cart.find(c => c.photoId === photoId && c.optionLetter === optionLetter);
+    return item ? item.quantity : defaultQty;
   };
 
   // Update quantity directly (No cart button required!)
@@ -242,72 +207,143 @@ export function Home() {
   };
 
   /* -----------------------------------------------------------------------------------
-     VIEW 1: HOME PAGE (LEFT VERTICAL VIDEO SLIDE, RIGHT CATEGORY GRID)
+     VIEW 1: HOME PAGE (LEFT HDTV 16:9 VIDEO SLIDE, RIGHT ONLY CATEGORY THUMBNAILS!)
+     * Category me sirf thumbnail ki image aayegi! No subcategories on Home!
      ----------------------------------------------------------------------------------- */
   if (screenMode === 'home') {
     return (
-      <div className="w-full h-full flex flex-col landscape:flex-row gap-3 overflow-hidden select-none">
+      <div className="w-full h-full flex flex-row gap-3 overflow-hidden select-none items-center">
         
-        {/* MULTIPLE VIDEO SLIDER (Touch/Finger Swiping, Muted by Default with Unmute Option, Instant Autoplay) */}
-        <div className="w-full h-[45%] landscape:w-[65%] landscape:h-full flex-shrink-0">
-          <HomeVideoSlider 
-            videos={videoList} 
-            onSelectPhoto={handleOpenFullImage} 
-          />
+        {/* LEFT: HDTV 16:9 VIDEO SLIDE (EXPANDED TO ~64% WIDTH) */}
+        <div className="w-[64%] h-full flex items-center justify-center bg-black/40 rounded-2xl border border-slate-800/80 p-2 overflow-hidden shadow-2xl">
+          <div className="w-full aspect-video max-h-full rounded-xl overflow-hidden bg-black relative border border-slate-800 shadow-xl flex items-center justify-center group">
+            {activeVideoPhoto?.videoUri ? (
+              <>
+                <video
+                  ref={videoRef}
+                  key={activeVideoSrc || activeVideoPhoto.videoUri}
+                  src={activeVideoSrc || undefined}
+                  autoPlay
+                  loop
+                  muted={isVideoMuted}
+                  playsInline
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    // Ignore or handle video load errors quietly
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+
+                {/* Video Slide Chevrons */}
+                {videoList.length > 1 && (
+                  <>
+                    <button
+                      onClick={() => setVideoSlideIdx(prev => (prev - 1 + videoList.length) % videoList.length)}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition hover:scale-105 active:scale-95 z-10"
+                      title="Previous"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <button
+                      onClick={() => setVideoSlideIdx(prev => (prev + 1) % videoList.length)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition hover:scale-105 active:scale-95 z-10"
+                      title="Next"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                  </>
+                )}
+
+                {/* Mute/Unmute */}
+                <button
+                  onClick={() => setIsVideoMuted(!isVideoMuted)}
+                  className="absolute bottom-2.5 right-2.5 p-1.5 rounded-lg bg-black/70 hover:bg-black text-white backdrop-blur-md border border-white/20 transition z-10"
+                >
+                  {isVideoMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                </button>
+
+                {/* Order Button (if quantity is set) */}
+                {activeVideoPhoto?.orderQuantity && (
+                  <div className="absolute top-4 right-4 z-20">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        useAppStore.getState().addToCart({
+                          id: 'hdtv-' + Date.now(),
+                          categoryId: activeVideoPhoto.categoryId || 'GENERAL',
+                          
+                          subCategoryName: 'Showroom Video',
+                          photoId: activeVideoPhoto.id,
+                          photoCode: 'HDTV: ' + (activeVideoPhoto.title || 'Video'),
+                          imageUri: activeVideoPhoto.thumbnailUri || 'https://images.unsplash.com/photo-1572911425175-6815f9175440?q=80&w=200&auto=format&fit=crop',
+                          optionLetter: 'A',
+                          quantity: parseInt(activeVideoPhoto.orderQuantity || '1') || 1
+                        });
+                        alert('Added to cart: ' + activeVideoPhoto.orderQuantity + ' pieces');
+                      }}
+                      className="bg-brand-gold hover:bg-yellow-400 text-black font-black px-4 py-2 rounded-lg shadow-[0_4px_12px_rgba(255,215,0,0.4)] flex items-center gap-2 transform transition hover:scale-105 active:scale-95 border-2 border-white/20"
+                    >
+                      <span className="uppercase text-sm">Order {activeVideoPhoto.orderQuantity} Pcs</span>
+                    </button>
+                  </div>
+                )}
+                
+                {/* Slide Dots */}
+                {videoList.length > 1 && (
+                  <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/15 flex items-center gap-1.5 z-10">
+                    {videoList.map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setVideoSlideIdx(i)}
+                        className={`h-1.5 rounded-full transition-all ${
+                          i === videoSlideIdx ? 'w-4 bg-brand-gold' : 'w-1.5 bg-white/40'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : null}
+          </div>
         </div>
 
-        {/* RIGHT/BOTTOM: CATEGORY GRID */}
-        <div className="flex-1 w-full landscape:w-[35%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-3 sm:p-4 shadow-2xl overflow-y-auto scroll-smooth scrollbar-thin">
-          {syncError && (
-            <div className="mb-3 p-3 rounded-xl bg-red-950/80 border border-red-800 text-red-200 text-xs shadow flex items-center justify-between gap-2">
-              <span>⚠️ {syncError}</span>
-              <button 
-                onClick={() => useAppStore.setState({ syncError: null })}
-                className="px-2 py-0.5 rounded bg-red-800 hover:bg-red-700 text-white font-bold text-[10px]"
-              >
-                Dismiss
-              </button>
+        {/* RIGHT: CATEGORY THUMBNAILS SIDEBAR (BALANCED SIZE, SMOOTH SCROLL) */}
+        <div className="w-[35%] h-full rounded-2xl bg-slate-900/90 border border-slate-800 p-2.5 shadow-2xl flex flex-col gap-2.5 overflow-y-auto scroll-smooth select-none">
+          {activeCategories.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center p-4 text-center text-slate-500 text-xs">
+              No categories with active products found.
             </div>
-          )}
-          <div className="flex flex-col gap-4 pb-4">
-            {categories.length === 0 ? (
-              <div className="flex flex-col gap-3">
-                {[1, 2, 3].map((n) => (
-                  <div key={n} className="w-full aspect-video rounded-xl bg-slate-800/60 animate-pulse border border-slate-800 p-3 flex flex-col justify-end">
-                    <div className="h-4 bg-slate-700/80 rounded w-1/2 mx-auto"></div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              categories.map(cat => (
+          ) : (
+            activeCategories.map(cat => {
+              return (
                 <button
                   key={cat.id}
                   onClick={() => handleSelectCategory(cat.id)}
-                  className="group w-full flex flex-col gap-3 p-3 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-colors duration-200 text-center shadow-lg focus:outline-none"
+                  className="group w-full flex-shrink-0 flex flex-col gap-1.5 p-1.5 rounded-xl bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/80 hover:border-brand-gold/80 transition-all duration-200 hover:scale-[1.01] active:scale-[0.98] text-center focus:outline-none shadow-md"
                 >
-                  <div className="w-full aspect-[16/10] sm:aspect-video rounded-xl overflow-hidden bg-black border-2 border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center">
+                  {/* 1. Strict 16:9 Category Thumbnail Image (Natural balanced ratio, neither too small nor oversized) */}
+                  <div className="w-full aspect-video rounded-lg overflow-hidden bg-black border border-slate-700/60 group-hover:border-brand-gold transition-colors shadow-inner flex items-center justify-center">
                     <img
-                      src={cat.thumbnailUrl?.includes('images.unsplash.com') ? cat.thumbnailUrl.replace('w=1280', 'w=640') : cat.thumbnailUrl}
+                      src={cat.thumbnailUrl}
                       alt={cat.displayName}
-                      loading="lazy"
-                      decoding="async"
-                      draggable={false}
-                      className="w-full h-full object-cover"
+                      className="standard-thumbnail-img group-hover:scale-105 transition-transform duration-300"
                     />
                   </div>
-                  <div className="flex items-center justify-center gap-2 py-1.5 flex-shrink-0">
+
+                  {/* 2. Category Name BELOW the Thumbnail (No folder count!) */}
+                  <div className="flex items-center justify-center gap-1.5 py-0.5 px-1 flex-shrink-0">
                     <span 
-                      className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full shadow" 
+                      className="w-2 h-2 rounded-full shadow flex-shrink-0" 
                       style={{ backgroundColor: cat.accentColorHex }} 
                     />
-                    <span className="text-sm sm:text-base font-black text-slate-200 group-hover:text-brand-gold tracking-wide truncate">
+                    <span className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-brand-gold tracking-wide truncate">
                       {cat.displayName}
                     </span>
                   </div>
                 </button>
-              ))
-            )}
-          </div>
+              );
+            })
+          )}
         </div>
 
       </div>
@@ -331,7 +367,7 @@ export function Home() {
               setScreenMode('home');
               setShowroomScreenMode('home');
             }}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition border border-slate-700/60 shadow-sm"
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition active:scale-95 border border-slate-700/60 shadow-sm"
           >
             <ArrowLeft size={16} className="text-brand-gold" />
             <span>Categories</span>
@@ -350,41 +386,24 @@ export function Home() {
 
         {/* Subcategories Grid: Sirf Thumbnail aur uske Niche Subcategory ka Naam */}
         <div className="flex-1 p-4 overflow-y-auto scrollbar-thin">
-          {syncError && (
-            <div className="mb-4 mx-auto max-w-2xl p-3 rounded-xl bg-red-950/80 border border-red-800 text-red-200 text-xs shadow flex items-center justify-between gap-2">
-              <span>⚠️ {syncError}</span>
-              <button 
-                onClick={() => useAppStore.setState({ syncError: null })}
-                className="px-2 py-0.5 rounded bg-red-800 hover:bg-red-700 text-white font-bold text-[10px]"
-              >
-                Dismiss
-              </button>
+          {categorySubList.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center p-8 text-slate-500 text-sm">
+              <span>No subcategories with active products found in this category.</span>
             </div>
-          )}
-          <div className="grid grid-cols-2 sm:grid-cols-3 landscape:grid-cols-4 gap-4 max-w-6xl mx-auto">
-            {categorySubList.length === 0 || isSubCategoriesLoading ? (
-              [1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                <div key={n} className="flex flex-col gap-2">
-                  <div className="w-full aspect-video rounded-xl bg-slate-800/60 animate-pulse border border-slate-800" />
-                  <div className="h-3 bg-slate-800 rounded w-3/4 mx-auto animate-pulse" />
-                </div>
-              ))
-            ) : (
-              categorySubList.map((sub) => (
+          ) : (
+            <div className="standard-catalog-grid max-w-5xl mx-auto">
+              {categorySubList.map((sub) => (
                 <button
                   key={sub.id}
                   onClick={() => handleSelectSubCategory(sub.id)}
-                  className="group flex flex-col gap-2 transition-colors duration-200 text-center focus:outline-none"
+                  className="group flex flex-col gap-2 transition-all duration-200 hover:scale-[1.02] active:scale-95 text-center focus:outline-none"
                 >
                   {/* 1. Strict 16:9 Thumbnail Image (Pure image, no text/folder icons over it) */}
-                  <div className="w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg">
+                  <div className="standard-thumbnail-container border-2 border-slate-800 group-hover:border-brand-gold transition-colors shadow-lg">
                     <img
-                      src={sub.thumbnailUrl?.includes('images.unsplash.com') ? sub.thumbnailUrl.replace('w=1280', 'w=640') : sub.thumbnailUrl}
+                      src={sub.thumbnailUrl}
                       alt={sub.name}
-                      loading="lazy"
-                      decoding="async"
-                      draggable={false}
-                      className="w-full h-full object-cover"
+                      className="standard-thumbnail-img group-hover:scale-105 transition-transform duration-300"
                     />
                   </div>
 
@@ -393,9 +412,9 @@ export function Home() {
                     {sub.name}
                   </span>
                 </button>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
       </div>
@@ -418,7 +437,7 @@ export function Home() {
               setScreenMode('subcategories');
               setShowroomScreenMode('subcategories');
             }}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition border border-slate-700/60 shadow-sm"
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition active:scale-95 border border-slate-700/60 shadow-sm"
           >
             <ArrowLeft size={16} className="text-brand-gold" />
             <span>Subcategories</span>
@@ -431,69 +450,34 @@ export function Home() {
 
         {/* Gallery Grid (Strict 16:9 HDTV Thumbnails, ZERO ABCD badges on top!) */}
         <div className="flex-1 p-3 overflow-y-auto scrollbar-thin">
-          {syncError && (
-            <div className="mb-3 mx-auto max-w-2xl p-3 rounded-xl bg-red-950/80 border border-red-800 text-red-200 text-xs shadow flex items-center justify-between gap-2">
-              <span>⚠️ {syncError}</span>
-              <button 
-                onClick={() => useAppStore.setState({ syncError: null })}
-                className="px-2 py-0.5 rounded bg-red-800 hover:bg-red-700 text-white font-bold text-[10px]"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-          <div className="grid grid-cols-2 sm:grid-cols-3 landscape:grid-cols-4 gap-3 max-w-6xl mx-auto">
-            {galleryPhotos.length === 0 || isPhotosLoading ? (
-              [1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                <div key={n} className="aspect-video rounded-xl bg-slate-800/60 animate-pulse border border-slate-800" />
-              ))
-            ) : (
-              galleryPhotos.map((photo) => {
-                const orderedItems = cart.filter(c => c.photoId === photo.id);
-                const totalPiecesOrdered = orderedItems.reduce((sum, item) => sum + item.quantity, 0);
+          <div className="grid grid-cols-3 gap-3 max-w-5xl mx-auto">
+            {galleryPhotos.map((photo) => {
+              const orderedItems = cart.filter(c => c.photoId === photo.id);
+              const totalPiecesOrdered = orderedItems.reduce((sum, item) => sum + item.quantity, 0);
 
-                return (
-                  <div
-                    key={photo.id}
-                    onClick={() => handleOpenFullImage(photo)}
-                    className="group relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-brand-gold cursor-pointer transition-colors duration-200 shadow-lg flex items-center justify-center"
-                  >
-                    {/* Clean 16:9 Photo Thumbnail */}
-                    <img
-                      src={(() => {
-                        const url = photo.thumbnailUrl || photo.imageUri;
-                        return url?.includes('images.unsplash.com') ? url.replace('w=1280', 'w=640') : url;
-                      })()}
-                      alt={photo.photoCode}
-                      loading="lazy"
-                      decoding="async"
-                      draggable={false}
-                      className="w-full h-full object-cover"
-                    />
-
-                    {/* Ordered Badge if already in cart */}
-                    {totalPiecesOrdered > 0 && (
-                      <div className="absolute top-2 right-2 bg-emerald-500 text-black text-[10px] font-black px-1.5 py-0.5 rounded shadow flex items-center gap-1">
-                        <Check size={10} />
-                        <span>{totalPiecesOrdered} pcs</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-
-            {/* Infinite Scroll Load More Button */}
-            {hasMorePhotos && loadMorePhotosFn && galleryPhotos.length > 0 && (
-              <div className="col-span-full flex justify-center py-6">
-                <button
-                  onClick={() => loadMorePhotosFn()}
-                  className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-brand-gold font-bold text-xs border border-slate-700 transition shadow-lg flex items-center gap-2"
+              return (
+                <div
+                  key={photo.id}
+                  onClick={() => handleOpenFullImage(photo)}
+                  className="group relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-brand-gold cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 shadow-lg flex items-center justify-center"
                 >
-                  <span>Load More Products</span>
-                </button>
-              </div>
-            )}
+                  {/* Clean 16:9 Photo without any ABCD overlay or item number */}
+                  <img
+                    src={photo.imageUri}
+                    alt={photo.photoCode}
+                    className="standard-thumbnail-img group-hover:scale-105 transition-transform duration-300"
+                  />
+
+                  {/* Ordered Badge if already in cart */}
+                  {totalPiecesOrdered > 0 && (
+                    <div className="absolute top-2 right-2 bg-emerald-500 text-black text-[10px] font-black px-1.5 py-0.5 rounded shadow flex items-center gap-1">
+                      <Check size={10} />
+                      <span>{totalPiecesOrdered} pcs</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -507,158 +491,29 @@ export function Home() {
      - Finger se slide / swipe karne par image change hoti hai.
      - Gallery button, Product code, aur Cart icon ABCD ke panel me integrate hain.
      ----------------------------------------------------------------------------------- */
+  const photo = selectedPhoto || galleryPhotos[0];
 
   return (
-    <div className="w-full h-full flex flex-col landscape:flex-row gap-2 rounded-2xl bg-brand-navy-dark border border-slate-800 overflow-hidden shadow-2xl select-none items-stretch">
+    <div className="w-full h-full flex flex-row gap-2 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden shadow-2xl p-1.5 select-none items-stretch">
       
       {/* LEFT/CENTER: 100% CLEAN MAXIMIZED PRODUCT IMAGE WITH FINGER SLIDE SWIPE */}
       <div 
-        className="flex-1 h-full rounded-xl bg-brand-navy-dark overflow-hidden relative flex items-center justify-center select-none"
-        title="Double tap or pinch to zoom. Swipe to change."
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        className="flex-1 h-full rounded-xl bg-black border border-slate-800/80 overflow-hidden relative flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
+        title="Swipe left or right to change image"
       >
-        <AnimatePresence initial={false} custom={slideDirection}>
-          <motion.div
-            key={photo?.id || photo?.imageUri}
-            custom={slideDirection}
-            variants={{
-              enter: (direction: number) => ({
-                x: direction > 0 ? 300 : -300,
-                opacity: 0
-              }),
-              center: {
-                zIndex: 1,
-                x: 0,
-                opacity: 1
-              },
-              exit: (direction: number) => ({
-                zIndex: 0,
-                x: direction < 0 ? 300 : -300,
-                opacity: 0
-              })
-            }}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{
-              x: { type: "spring", stiffness: 500, damping: 35 },
-              opacity: { duration: 0.2 }
-            }}
-            drag={isZoomedIn ? false : "x"}
-            dragDirectionLock
-            dragMomentum={false}
-            dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={0.3}
-            onDragEnd={(_, { offset }: any) => {
-              if (pinchLockRef.current) {
-                return;
-              }
-              if (offset.x < -25) {
-                handleNextPhoto();
-              } else if (offset.x > 25) {
-                handlePrevPhoto();
-              }
-            }}
-            onTouchStart={(e: React.TouchEvent) => {
-              if (e.touches.length >= 2) {
-                pinchLockRef.current = true;
-              } else if (e.touches.length === 1) {
-                const ft = e.touches[0];
-                tapStartRef.current = { x: ft.clientX, y: ft.clientY };
-              }
-            }}
-            onPointerMoveCapture={(e) => {
-              if (pinchLockRef.current) {
-                e.stopPropagation();
-              }
-            }}
-            onTouchMoveCapture={(e: React.TouchEvent) => {
-              if (!isZoomedIn && e.touches.length === 1) {
-                e.stopPropagation();
-              }
-            }}
-            onTouchEnd={(e: React.TouchEvent) => {
-              if (e.touches.length === 0) {
-                pinchLockRef.current = false;
-              }
-              const api = zoomApiRef.current;
-              const t = e.changedTouches[0];
-              if (!t) return;
-              const ts = tapStartRef.current; tapStartRef.current = null;
-              if (ts && Math.hypot(t.clientX - ts.x, t.clientY - ts.y) > 12) { lastTapRef.current = { t: 0, x: 0, y: 0 }; return; }
-              const now = Date.now();
-              const lt = lastTapRef.current;
-              const isDouble = now - lt.t < 350 && Math.hypot(t.clientX - lt.x, t.clientY - lt.y) < 60;
-              lastTapRef.current = { t: now, x: t.clientX, y: t.clientY };
-              if (!isDouble || !api) return;
-              lastTapRef.current = { t: 0, x: 0, y: 0 };
-              const el = e.currentTarget as Element | null;
-              zoomGenRef.current += 1;
-              const gen = zoomGenRef.current;
-              let scale = (api && api.state && typeof api.state.scale === 'number' && isFinite(api.state.scale)) ? api.state.scale : -1;
-              if (!(scale > 0)) scale = readScaleFromDom(el);
-              if (!(scale > 0) && typeof scaleRef.current === 'number' && isFinite(scaleRef.current)) scale = scaleRef.current;
-              const pre = 'g' + gen + ' s=' + (scale > 0 ? scale.toFixed(2) : '?');
-              const goingIn = !(scale > 1.2);
-              const target = goingIn ? 2.5 : 1;
-              const start = goingIn ? (scale > 0 ? Math.max(scale, 1) : 1) : Math.min(scale, 2.5);
-              const t0 = performance.now();
-              const ANIM = 260;
-              const HOLD = 700;
-              if (goingIn) { zoomedRef.current = true; setIsZoomedIn(true); scaleRef.current = 2.5; } else { zoomedRef.current = false; setIsZoomedIn(false); scaleRef.current = 1; }
-              const step = () => {
-                if (zoomGenRef.current !== gen || pinchLockRef.current) return;
-                const dt = performance.now() - t0;
-                if (dt < ANIM) {
-                  const k = dt / ANIM;
-                  const ez = 1 - Math.pow(1 - k, 3);
-                  const s = start + (target - start) * ez;
-                  if (api.centerView) { api.centerView(s, 0); } else { api.zoomIn(1, 0); }
-                  requestAnimationFrame(step);
-                } else if (dt < HOLD) {
-                  if (goingIn) { if (api.centerView) { api.centerView(2.5, 0); } else { api.zoomIn(2.5, 0); } } else { api.resetTransform(0); }
-                  requestAnimationFrame(step);
-                } else {
-                  if (!goingIn) { api.resetTransform(0); }
-                  const post = (api && api.state && typeof api.state.scale === 'number') ? api.state.scale : readScaleFromDom(el);
-                  const stale = zoomGenRef.current !== gen; void [pre, post, stale];
-                }
-              };
-              requestAnimationFrame(step);
-            }}
-            className="absolute w-full h-full"
-          >
-            <TransformWrapper
-              ref={(instance: any) => { if (instance) zoomApiRef.current = instance; }}
-              initialScale={1}
-              minScale={1}
-              maxScale={4}
-              centerOnInit={true}
-              limitToBounds={true}
-              wheel={{ disabled: true }}
-              doubleClick={{ disabled: true }}
-              pinch={{ step: 5 }}
-              panning={{ disabled: !isZoomedIn, velocityDisabled: true }}
-              onInit={(ref: any) => { zoomApiRef.current = ref; }}
-              onTransform={(ref: any) => {
-                setIsZoomedIn(ref.state.scale > 1.05);
-                zoomedRef.current = ref.state.scale > 1.05;
-                scaleRef.current = ref.state.scale;
-              }}
-            >
-              <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center" }}>
-                <img
-                  key={photo?.imageUri}
-                  src={photo?.imageUri}
-                  alt={photo?.photoCode}
-                  loading="lazy"
-                  decoding="async"
-                  draggable={false}
-                  className="allow-pointer w-full h-full object-contain pointer-events-auto cursor-zoom-in"
-                />
-              </TransformComponent>
-            </TransformWrapper>
-          </motion.div>
-        </AnimatePresence>
+        <img
+          key={photo?.imageUri}
+          src={photo?.imageUri}
+          alt={photo?.photoCode}
+          draggable={false}
+          className="w-full h-full object-contain pointer-events-none"
+        />
 
         {/* Feedback Toast */}
         {qtyFeedback && (
@@ -671,16 +526,16 @@ export function Home() {
 
       {/* RIGHT: COMPACT SIDE PANEL FOR ABCD (With Gallery button, Product Code, ABCD, and Cart icon) */}
       {photo && (
-        <div className="w-full landscape:w-[145px] sm:landscape:w-[160px] md:landscape:w-[175px] h-auto landscape:h-full rounded-2xl bg-slate-900 border border-slate-800 p-2 flex flex-col justify-between shadow-2xl flex-shrink-0 gap-2 landscape:gap-0 items-stretch">
+        <div className="w-[145px] sm:w-[160px] md:w-[175px] h-full rounded-2xl bg-slate-900 border border-slate-800 p-2 flex flex-col justify-between shadow-2xl flex-shrink-0">
           
           {/* TOP: Gallery Back Button & Product Code */}
-          <div className="flex flex-row landscape:flex-col gap-2 justify-between flex-shrink-0 w-full landscape:w-auto">
+          <div className="flex flex-col gap-1.5">
             <button
               onClick={() => {
                 setScreenMode('gallery');
                 setShowroomScreenMode('gallery');
               }}
-              className="flex-1 landscape:w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700/80 transition shadow-sm"
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700/80 transition active:scale-95 shadow-sm"
               title="Back to Gallery"
             >
               <ArrowLeft size={13} className="text-brand-gold" />
@@ -688,80 +543,58 @@ export function Home() {
             </button>
 
             {/* Product Number in ABCD Side Panel */}
-            <div className="flex-1 landscape:w-full flex items-center justify-center text-center py-1.5 px-2 rounded-lg bg-black/70 border border-slate-800 font-mono font-black text-xs text-brand-gold truncate shadow-inner">
+            <div className="text-center py-1 px-1.5 rounded-lg bg-black/70 border border-slate-800 font-mono font-black text-xs text-brand-gold truncate shadow-inner">
               {photo?.photoCode}
             </div>
           </div>
 
           {/* MIDDLE: ABCD Steppers (Enlarged, high-contrast, finger-friendly) */}
-          <div className="grid grid-cols-2 landscape:flex landscape:flex-col gap-2 py-1 overflow-y-auto overflow-x-hidden scrollbar-none flex-1 content-start">
-            {getPhotoVariants(photo).map((variant) => {
-              const isAvailable = variant.isAvailable;
-              const currentQty = getOptionQty(photo.id, variant.key);
-              const minQty = variant.defaultQuantity;
-              const badge = letterBadgeColors[variant.key] || { bg: 'bg-indigo-600', text: 'text-white' };
+          <div className="flex flex-col gap-2 py-1 overflow-y-auto scrollbar-none">
+            {['A', 'B', 'C', 'D'].slice(0, photo.itemCount).map(option => {
+              const isAvailable = photo[`${option.toLowerCase()}Available` as keyof typeof photo];
+              const currentQty = getOptionQty(photo.id, option, photo.defaultQuantity);
+              const badge = letterBadgeColors[option];
 
-              if (!isAvailable || minQty === 0) {
+              if (!isAvailable) {
                 return (
                   <div 
-                    key={variant.key} 
-                    className="flex flex-wrap items-center justify-between p-1.5 rounded-xl bg-slate-950 border border-slate-800 transition shadow-sm gap-1.5 pointer-events-none w-full"
+                    key={option} 
+                    className="flex items-center justify-between p-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80 opacity-40"
                   >
-                    {/* Left Label Box (Variant Name): reddish tint with bold RED text */}
-                    <div className="min-w-fit px-3 py-1.5 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center bg-red-950/30 border border-red-900/30 text-red-500 whitespace-nowrap">
-                      {variant.label}
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-slate-500 font-black text-xs flex items-center justify-center">
+                      {option}
                     </div>
-
-                    {/* Right Control Area: Out of Stock bright red bold pill with slow blink animation */}
-                    <div className="flex-1 flex items-center justify-center px-3 py-1.5 bg-red-950/25 border border-red-900/40 rounded-lg animate-slow-blink">
-                      <span className="text-xs font-black text-red-500 whitespace-nowrap">
-                        Out of Stock
-                      </span>
-                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono font-bold px-2">OUT</span>
                   </div>
                 );
               }
 
               return (
                 <div
-                  key={variant.key}
-                  className="flex flex-wrap items-center justify-between p-1.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-brand-gold/60 transition shadow-sm gap-1.5"
+                  key={option}
+                  className="flex items-center justify-between p-1 rounded-xl bg-slate-950 border border-slate-800 hover:border-brand-gold/60 transition shadow-sm gap-1.5"
                 >
-                  {/* Interactive Variant Badge (Clicking acts ONLY as CLEAR when has quantity, NEVER increments) */}
-                  <button
-                    onClick={() => {
-                      if (currentQty > 0) {
-                        handleUpdateQty(photo, variant.key, 0); // Touching label CLEARS quantity
-                      }
-                    }}
-                    disabled={currentQty === 0}
-                    className={`min-w-fit px-3 py-1.5 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center shadow transition whitespace-nowrap ${
-                      currentQty > 0 
-                        ? `${badge.bg} ${badge.text} cursor-pointer font-black` 
-                        : 'bg-[#1e293b] text-white border border-[#334155] cursor-default'
-                    }`}
-                    title={currentQty > 0 ? `Tap to Clear (${variant.label})` : `${variant.label} (Pack: ${minQty} pcs)`}
+                  {/* Letter Badge (A, B, C, D) */}
+                  <div 
+                    className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg ${badge.bg} ${badge.text} font-black text-xs sm:text-sm flex items-center justify-center shadow flex-shrink-0`}
                   >
-                    {variant.label}
-                  </button>
+                    {option}
+                  </div>
 
-                  {/* Compact Stepper (Strictly toggles in multiples of minQty) */}
-                  <div className="flex items-center bg-slate-900 border border-slate-700/90 rounded-lg overflow-hidden justify-between flex-1">
+                  {/* Large Finger-Friendly (-) Count (+) Stepper */}
+                  <div className="flex items-center bg-slate-900 border border-slate-700/90 rounded-lg overflow-hidden flex-1 justify-between">
                     {/* Big Minus Button */}
                     <button
-                      onClick={() => {
-                        const target = currentQty <= minQty ? 0 : currentQty - minQty;
-                        handleUpdateQty(photo, variant.key, target);
-                      }}
+                      onClick={() => handleUpdateQty(photo, option, currentQty - (photo.defaultQuantity >= 12 ? 6 : 1))}
                       disabled={currentQty <= 0}
-                      className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center transition rounded-l-md ${
+                      className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center transition rounded-l-md active:scale-90 ${
                         currentQty > 0 
                           ? 'bg-slate-800 hover:bg-slate-700 text-slate-100' 
                           : 'bg-slate-900 text-slate-600 opacity-40 cursor-not-allowed'
                       }`}
                       title="Decrease Quantity"
                     >
-                      <Minus size={13} strokeWidth={3} />
+                      <Minus size={15} strokeWidth={2.5} />
                     </button>
 
                     {/* Centered Quantity Number */}
@@ -772,13 +605,13 @@ export function Home() {
                     {/* Big Plus Button (Amber high visibility) */}
                     <button
                       onClick={() => {
-                        const target = currentQty === 0 ? minQty : currentQty + minQty;
-                        handleUpdateQty(photo, variant.key, target);
+                        const step = photo.defaultQuantity >= 12 ? 6 : 1;
+                        handleUpdateQty(photo, option, currentQty === 0 ? photo.defaultQuantity : currentQty + step);
                       }}
-                      className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-500 hover:bg-amber-400 active:bg-amber-300 text-black flex items-center justify-center transition font-black rounded-r-md shadow-sm"
-                      title={`Add ${minQty} pcs`}
+                      className="w-8 h-8 sm:w-9 sm:h-9 bg-amber-500 hover:bg-amber-400 active:bg-amber-300 text-black flex items-center justify-center transition font-black rounded-r-md active:scale-90 shadow-sm"
+                      title="Increase Quantity / Add"
                     >
-                      <Plus size={13} strokeWidth={3} />
+                      <Plus size={15} strokeWidth={2.5} />
                     </button>
                   </div>
                 </div>
@@ -789,11 +622,11 @@ export function Home() {
           {/* BOTTOM: Cart Button with ShoppingBag Icon */}
           <button
             onClick={() => setIsCartOpen(true)}
-            className="w-full flex items-center justify-center gap-2 py-3 landscape:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-sm landscape:text-xs shadow-lg transition border border-amber-400/50 flex-shrink-0"
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs shadow-lg transition active:scale-95 border border-amber-400/50"
             title="Open Order Slip / Cart"
           >
-            <ShoppingBag size={16} className="landscape:w-[14px] landscape:h-[14px]" />
-            <span>View Cart</span>
+            <ShoppingBag size={14} />
+            <span>{totalCartPieces > 0 ? `${totalCartPieces} pcs` : 'View Cart'}</span>
           </button>
 
         </div>

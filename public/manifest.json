@@ -6,7 +6,7 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "landscape",
+  "orientation": "any",
   "background_color": "#070D19",
   "theme_color": "#FF0000",
   "categories": ["business", "shopping"],
